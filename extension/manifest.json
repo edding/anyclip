@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Text-to-Notes",
+  "version": "1.0.0",
+  "description": "Save selected text as notes with tags and manage them in a dedicated page",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "notes/notes.html",
+    "default_title": "Open Notes"
+  }
+}
