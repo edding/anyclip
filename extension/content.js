@@ -89,13 +89,14 @@ function isValidSelection() {
   const selectedText = selection.toString().trim();
   
   if (!selectedText) return false;
-  if (selectedText.length < 3) return false;
+  if (selectedText.length < 2) return false;
   if (selectedText.length > 10000) return false;
   
+  // More lenient patterns - only reject obvious non-content
   const invalidPatterns = [
-    /^[\s\n\r\t]*$/,
-    /^[0-9\s\-\+\=\*\/\(\)\[\]]*$/,
-    /^[\W]*$/
+    /^[\s\n\r\t]*$/,          // Only whitespace
+    /^[^\p{L}\p{N}\s]*$/u,    // Only punctuation (no letters or numbers, Unicode-aware)
+    /^\.+$|^\?+$|^!+$/        // Only dots, question marks, or exclamation marks
   ];
   
   return !invalidPatterns.some(pattern => pattern.test(selectedText));
