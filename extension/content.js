@@ -1,6 +1,7 @@
 let selectionPopup = null;
 let selectionTimeout = null;
 let lastSelection = '';
+let lastMousePosition = { x: 0, y: 0 };
 
 function createSelectionPopup() {
   if (selectionPopup) return selectionPopup;
@@ -42,32 +43,46 @@ function showSelectionPopup() {
     return;
   }
 
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
   const popup = createSelectionPopup();
 
-  const popupRect = popup.getBoundingClientRect();
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const scrollY = window.scrollY;
-  const scrollX = window.scrollX;
+  // Use the stored mouse position for consistent placement
+  if (lastMousePosition.x > 0 && lastMousePosition.y > 0) {
+    const popupRect = popup.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
 
-  let top = rect.top + scrollY - popupRect.height - 8;
-  let left = rect.left + scrollX + (rect.width / 2) - (popupRect.width / 2);
+    // Position popup near mouse, offset to avoid covering the selection
+    let top = lastMousePosition.y + scrollY - popupRect.height - 8;
+    let left = lastMousePosition.x + scrollX - (popupRect.width / 2);
 
-  if (top < scrollY) {
-    top = rect.bottom + scrollY + 8;
+    // If popup would be above viewport, show below mouse
+    if (top < scrollY) {
+      top = lastMousePosition.y + scrollY + 8;
+    }
+
+    // Keep popup within viewport horizontally
+    if (left < scrollX) {
+      left = scrollX + 8;
+    } else if (left + popupRect.width > scrollX + viewportWidth) {
+      left = scrollX + viewportWidth - popupRect.width - 8;
+    }
+
+    popup.style.display = 'block';
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+  } else {
+    // Fallback to selection-based positioning
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+    
+    popup.style.display = 'block';
+    popup.style.top = `${rect.top + scrollY - 50}px`;
+    popup.style.left = `${rect.left + scrollX}px`;
   }
-
-  if (left < scrollX) {
-    left = scrollX + 8;
-  } else if (left + popupRect.width > scrollX + viewportWidth) {
-    left = scrollX + viewportWidth - popupRect.width - 8;
-  }
-
-  popup.style.display = 'block';
-  popup.style.top = `${top}px`;
-  popup.style.left = `${left}px`;
   
   popup.style.opacity = '0';
   popup.style.transform = 'translateY(-10px) scale(0.95)';
@@ -142,27 +157,55 @@ async function handleSaveNote() {
 }
 
 function handleSaveWithTags() {
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
-  
-  if (!selectedText) return;
+  try {
+    const selection = window.getSelection();
+    if (!selection) {
+      console.warn('Text-to-Notes: No selection available for tags dialog');
+      return;
+    }
 
-  showTagsDialog(selectedText);
+    const selectedText = selection.toString().trim();
+    
+    if (!selectedText) {
+      console.warn('Text-to-Notes: No selected text for tags dialog');
+      return;
+    }
+
+    console.log('Text-to-Notes: Opening tags dialog for text:', selectedText.substring(0, 50) + '...');
+    showTagsDialog(selectedText);
+  } catch (error) {
+    console.error('Text-to-Notes: Error in handleSaveWithTags:', error);
+    // Fallback to simple save
+    handleSaveNote();
+  }
 }
 
 function showTagsDialog(selectedText) {
-  const existingDialog = document.getElementById('tags-dialog');
-  if (existingDialog) {
-    existingDialog.remove();
-  }
+  try {
+    console.log('Text-to-Notes: showTagsDialog called with text:', selectedText);
+    
+    const existingDialog = document.getElementById('tags-dialog');
+    if (existingDialog) {
+      existingDialog.remove();
+    }
 
-  // Get current selection position
-  const selection = window.getSelection();
-  let selectionRect = null;
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    selectionRect = range.getBoundingClientRect();
-  }
+    // Verify document body exists
+    if (!document.body) {
+      console.error('Text-to-Notes: document.body not available');
+      return;
+    }
+
+    // Get current selection position
+    const selection = window.getSelection();
+    let selectionRect = null;
+    if (selection && selection.rangeCount > 0) {
+      try {
+        const range = selection.getRangeAt(0);
+        selectionRect = range.getBoundingClientRect();
+      } catch (rangeError) {
+        console.warn('Text-to-Notes: Could not get selection rectangle:', rangeError);
+      }
+    }
 
   const dialog = document.createElement('div');
   dialog.id = 'tags-dialog';
@@ -187,46 +230,60 @@ function showTagsDialog(selectedText) {
     </div>
   `;
 
-  document.body.appendChild(dialog);
+    try {
+      document.body.appendChild(dialog);
+      console.log('Text-to-Notes: Dialog added to DOM successfully');
+    } catch (appendError) {
+      console.error('Text-to-Notes: Failed to append dialog to body:', appendError);
+      return;
+    }
 
-  // Position dialog near the selection if available
-  if (selectionRect) {
-    const dialogContent = dialog.querySelector('.dialog-content');
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    // Calculate initial position (centered on selection)
-    let left = selectionRect.left + scrollX + (selectionRect.width / 2) - 200; // 200px = half dialog width
-    let top = selectionRect.bottom + scrollY + 20; // 20px offset below selection
-    
-    // Adjust if dialog would go off-screen horizontally
-    if (left < scrollX + 20) {
-      left = scrollX + 20;
-    } else if (left + 400 > scrollX + viewportWidth - 20) { // 400px = dialog width
-      left = scrollX + viewportWidth - 420;
+    // Position dialog near the last mouse position
+    try {
+      const dialogContent = dialog.querySelector('.dialog-content');
+      
+      if (dialogContent && lastMousePosition.x > 0 && lastMousePosition.y > 0) {
+        console.log('Text-to-Notes: Positioning dialog near mouse position:', lastMousePosition);
+        
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Position dialog near mouse position, offset to avoid covering the selection
+        let left = lastMousePosition.x - 200; // 200px = half dialog width, center on mouse
+        let top = lastMousePosition.y + 20; // 20px below mouse to avoid covering selection
+        
+        // Adjust if dialog would go off-screen horizontally
+        if (left < 20) {
+          left = 20;
+        } else if (left + 400 > viewportWidth - 20) {
+          left = viewportWidth - 420;
+        }
+        
+        // Adjust if dialog would go off-screen vertically
+        if (top + 350 > viewportHeight - 20) { // 350px = approx dialog height
+          top = lastMousePosition.y - 370; // Show above mouse
+          if (top < 20) {
+            top = 20; // Fallback to top of viewport
+          }
+        }
+        
+        // Apply positioning
+        dialogContent.style.position = 'fixed';
+        dialogContent.style.left = `${left}px`;
+        dialogContent.style.top = `${top}px`;
+        dialogContent.style.margin = '0';
+        
+        // Remove centering from the main dialog
+        dialog.style.alignItems = 'flex-start';
+        dialog.style.justifyContent = 'flex-start';
+        
+        console.log('Text-to-Notes: Dialog positioned at:', { left, top });
+      } else {
+        console.log('Text-to-Notes: Using default centered positioning');
+      }
+    } catch (positionError) {
+      console.warn('Text-to-Notes: Error positioning dialog near mouse:', positionError);
     }
-    
-    // Adjust if dialog would go off-screen vertically
-    if (top + 300 > scrollY + viewportHeight - 20) { // 300px = approx dialog height
-      top = selectionRect.top + scrollY - 320; // Show above selection
-    }
-    
-    // Ensure dialog stays within viewport
-    if (top < scrollY + 20) {
-      top = scrollY + 20;
-    }
-    
-    dialogContent.style.position = 'absolute';
-    dialogContent.style.left = `${left}px`;
-    dialogContent.style.top = `${top}px`;
-    dialogContent.style.margin = '0';
-    
-    // Remove centering from overlay
-    dialog.querySelector('.dialog-overlay').style.alignItems = 'flex-start';
-    dialog.querySelector('.dialog-overlay').style.justifyContent = 'flex-start';
-  }
 
   const tagsInput = dialog.querySelector('#tags-input');
   const tagChips = dialog.querySelector('#tag-chips');
@@ -322,11 +379,18 @@ function showTagsDialog(selectedText) {
     }
   });
 
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog.querySelector('.dialog-overlay')) {
-      dialog.remove();
+    console.log('Text-to-Notes: Tags dialog setup complete');
+
+  } catch (error) {
+    console.error('Text-to-Notes: Error in showTagsDialog:', error);
+    // Fallback: try simple save instead
+    try {
+      handleSaveNote();
+    } catch (fallbackError) {
+      console.error('Text-to-Notes: Fallback save also failed:', fallbackError);
+      showError('Could not open tags dialog');
     }
-  });
+  }
 }
 
 function showSaveConfirmation() {
@@ -452,73 +516,94 @@ function removeTagHandler(index) {
 window.removeTagByIndex = removeTagHandler;
 
 async function loadRecentTags(container, currentTags) {
+  console.log('Text-to-Notes: loadRecentTags called');
+  
   try {
-    // Check if chrome.storage is available
-    if (!chrome || !chrome.storage) {
+    if (!chrome || !chrome.runtime) {
       console.warn('Chrome storage not available, using fallback tags');
-      const fallbackTags = ['work', 'important', 'research'];
-      updateRecentTagsDisplay(container, currentTags, fallbackTags);
+      updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
       return;
     }
 
-    const result = await chrome.storage.local.get('recent_tags');
-    let recentTags = result.recent_tags || [];
-    
-    // If no recent tags exist, add some sample ones for testing
-    if (recentTags.length === 0) {
-      recentTags = ['work', 'important', 'research'];
-      try {
-        await chrome.storage.local.set({ recent_tags: recentTags });
-      } catch (storageError) {
-        console.warn('Could not save recent tags to storage:', storageError);
-      }
+    const response = await chrome.runtime.sendMessage({
+      action: 'getRecentTags',
+      data: { limit: 3 }
+    });
+
+    if (response && response.success) {
+      const recentTags = response.data || [];
+      console.log('Text-to-Notes: Loaded recent tags from storage:', recentTags);
+      updateRecentTagsDisplay(container, currentTags, recentTags);
+    } else {
+      console.warn('Failed to load recent tags, using fallback');
+      updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
     }
-    
-    updateRecentTagsDisplay(container, currentTags, recentTags);
   } catch (error) {
-    console.warn('Error loading recent tags, using fallback:', error);
-    // Use fallback tags when storage fails
-    const fallbackTags = ['work', 'important', 'research'];
-    updateRecentTagsDisplay(container, currentTags, fallbackTags);
+    console.error('Text-to-Notes: Error loading recent tags:', error);
+    updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
   }
 }
 
 function updateRecentTagsDisplay(container, currentTags, recentTags = null) {
-  if (!recentTags) {
-    if (chrome && chrome.storage) {
-      chrome.storage.local.get('recent_tags').then(result => {
-        const recent = result.recent_tags || ['work', 'important', 'research'];
-        renderRecentTags(container, recent, currentTags);
-      }).catch(error => {
-        console.warn('Could not load recent tags:', error);
-        renderRecentTags(container, ['work', 'important', 'research'], currentTags);
-      });
-    } else {
-      renderRecentTags(container, ['work', 'important', 'research'], currentTags);
-    }
+  console.log('Text-to-Notes: updateRecentTagsDisplay called with:', {
+    container: container ? 'exists' : 'null',
+    currentTags,
+    recentTags
+  });
+  
+  if (!recentTags || recentTags.length === 0) {
+    console.log('Text-to-Notes: No recent tags provided, using default');
+    renderRecentTags(container, ['work', 'important', 'research'], currentTags);
   } else {
+    console.log('Text-to-Notes: Using provided recent tags:', recentTags);
     renderRecentTags(container, recentTags, currentTags);
   }
 }
 
 function renderRecentTags(container, recentTags, currentTags) {
-  // Filter out tags that are already added
-  const availableTags = recentTags.filter(tag => !currentTags.includes(tag)).slice(0, 3);
+  console.log('Text-to-Notes: renderRecentTags called with:', {
+    container: container ? container.id || 'exists' : 'null',
+    recentTags,
+    currentTags
+  });
   
-  if (availableTags.length === 0) {
-    container.parentElement.style.display = 'none';
+  if (!container) {
+    console.error('Text-to-Notes: No container provided to renderRecentTags');
     return;
   }
   
-  container.parentElement.style.display = 'block';
-  container.innerHTML = availableTags.map((tag, index) => `
+  // Filter out tags that are already added
+  const availableTags = recentTags.filter(tag => !currentTags.includes(tag)).slice(0, 3);
+  console.log('Text-to-Notes: Available tags after filtering:', availableTags);
+  
+  if (availableTags.length === 0) {
+    console.log('Text-to-Notes: No available tags, hiding recent tags section');
+    if (container.parentElement) {
+      container.parentElement.style.display = 'none';
+    }
+    return;
+  }
+  
+  console.log('Text-to-Notes: Showing recent tags section');
+  if (container.parentElement) {
+    container.parentElement.style.display = 'block';
+  }
+  
+  const buttonsHTML = availableTags.map((tag, index) => `
     <button class="recent-tag-btn" data-tag="${tag}" data-index="${index}" type="button">${tag}</button>
   `).join('');
   
+  console.log('Text-to-Notes: Setting container innerHTML:', buttonsHTML);
+  container.innerHTML = buttonsHTML;
+  
   // Add event listeners to recent tag buttons
-  container.querySelectorAll('.recent-tag-btn').forEach(button => {
+  const buttons = container.querySelectorAll('.recent-tag-btn');
+  console.log('Text-to-Notes: Found', buttons.length, 'recent tag buttons');
+  
+  buttons.forEach(button => {
     button.addEventListener('click', (e) => {
       const tag = e.target.dataset.tag;
+      console.log('Text-to-Notes: Recent tag clicked:', tag);
       addRecentTagHandler(tag);
     });
   });
@@ -554,25 +639,15 @@ function addRecentTagHandler(tag) {
 window.addRecentTag = addRecentTagHandler;
 
 async function updateRecentTagsStorage(newTags) {
-  try {
-    if (!chrome || !chrome.storage) {
-      console.warn('Chrome storage not available, cannot save recent tags');
-      return;
-    }
-
-    const result = await chrome.storage.local.get('recent_tags');
-    const recentTags = result.recent_tags || [];
-    
-    // Add new tags to the beginning, remove duplicates, keep only 3
-    const updatedTags = [...new Set([...newTags, ...recentTags])].slice(0, 3);
-    
-    await chrome.storage.local.set({ recent_tags: updatedTags });
-  } catch (error) {
-    console.warn('Error updating recent tags:', error);
-  }
+  // This function is now handled by the storage layer when notes are saved
+  // The background script will automatically update tag statistics
+  console.log('Text-to-Notes: Recent tags will be updated automatically by storage layer');
 }
 
 document.addEventListener('mouseup', (e) => {
+  // Store mouse position for later use in dialog positioning
+  lastMousePosition = { x: e.clientX, y: e.clientY };
+  
   // Small delay to ensure selection has been finalized
   setTimeout(() => {
     const selection = window.getSelection();
@@ -716,43 +791,50 @@ style.textContent = `
 }
 
 #tags-dialog {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10001;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: auto !important;
 }
 
 .dialog-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(4px) !important;
+  pointer-events: auto !important;
 }
 
 .dialog-content {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  width: 90%;
-  max-width: 400px;
-  position: relative;
-  z-index: 1;
+  background: white !important;
+  border-radius: 12px !important;
+  padding: 20px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1) !important;
+  width: 90% !important;
+  max-width: 400px !important;
+  position: relative !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .dialog-content h3 {
-  margin: 0 0 12px 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2937;
+  margin: 0 0 12px 0 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: #1f2937 !important;
+  display: block !important;
+  visibility: visible !important;
 }
 
 .note-preview {
@@ -877,13 +959,15 @@ style.textContent = `
 }
 
 .dialog-actions button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  padding: 8px 16px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  display: inline-block !important;
+  visibility: visible !important;
 }
 
 .cancel-btn {
@@ -933,4 +1017,20 @@ style.textContent = `
 }
 `;
 
-document.head.appendChild(style);
+// Only initialize if we have the required APIs and DOM
+if (typeof chrome !== 'undefined' && chrome.runtime && document.body) {
+  document.head.appendChild(style);
+  console.log('Text-to-Notes: Extension initialized successfully');
+} else {
+  console.warn('Text-to-Notes: Extension could not initialize - missing required APIs or DOM not ready');
+  
+  // Try again when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof chrome !== 'undefined' && chrome.runtime && document.body) {
+        document.head.appendChild(style);
+        console.log('Text-to-Notes: Extension initialized after DOM ready');
+      }
+    });
+  }
+}

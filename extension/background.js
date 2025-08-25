@@ -72,4 +72,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (request.action === 'getRecentTags') {
+    const limit = request.data?.limit || 10;
+    storage.getRecentTags(limit).then(tags => {
+      sendResponse({ success: true, data: tags });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  if (request.action === 'getPopularTags') {
+    const limit = request.data?.limit || 10;
+    storage.getPopularTags(limit).then(tags => {
+      sendResponse({ success: true, data: tags });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  if (request.action === 'getAllTags') {
+    storage.getAllTags().then(tags => {
+      sendResponse({ success: true, data: tags });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  if (request.action === 'getTagStatistics') {
+    storage.getTagStatistics().then(stats => {
+      sendResponse({ success: true, data: stats });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  if (request.action === 'getNotesByTag') {
+    storage.getNotesByTag(request.data.tagName).then(notes => {
+      sendResponse({ success: true, data: notes });
+    }).catch(error => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
 });

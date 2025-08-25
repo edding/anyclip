@@ -90,37 +90,61 @@ function isValidSelection() {
 
 ## Storage Architecture
 
-### Decision: Chrome Storage Local with Class-Based DAO
+### Decision: Relational-Style Storage with Tag Management
 
 **Date**: 2025-08-25  
-**Context**: MVP needs reliable local storage with future extensibility.
+**Context**: Need to support tag-centric operations like "view by tag", tag analytics, and tag management.
 
-#### Implementation:
+#### Database Schema:
 ```javascript
-class NotesStorage {
-  constructor() {
-    this.STORAGE_KEY = 'text_to_notes';
-  }
-  // CRUD operations using chrome.storage.local
-}
-```
+// Storage Keys
+const STORAGE_KEYS = {
+  NOTES: 'notes_collection',
+  TAGS: 'tags_collection', 
+  TAG_STATS: 'tag_statistics'
+};
 
-#### Schema:
-```json
+// Note Schema
 {
   "id": "uuid",
   "text": "captured snippet",
   "url": "https://example.com/path",
-  "title": "Example Page", 
-  "tags": ["tag1", "tag2"],
-  "created_at": "2025-08-24T10:00:00Z"
+  "title": "Example Page",
+  "tags": ["tag1", "tag2"], // Denormalized for performance
+  "created_at": "2025-08-24T10:00:00Z",
+  "updated_at": "2025-08-24T10:00:00Z"
+}
+
+// Tag Schema (for tag management and analytics)
+{
+  "name": "work",
+  "count": 15, // Number of notes with this tag
+  "created_at": "2025-08-24T09:00:00Z",
+  "last_used": "2025-08-24T10:00:00Z",
+  "color": "#3b82f6" // Optional: for UI theming
+}
+
+// Tag Statistics (for insights and recent tags)
+{
+  "recent_tags": ["work", "important", "research"], // Last 10 used
+  "popular_tags": ["work", "ideas", "todo"], // Top 10 by count
+  "total_tags": 25,
+  "total_notes": 150
 }
 ```
 
+#### Operations Supported:
+- **Notes CRUD**: Create, read, update, delete notes
+- **Tag Management**: Get all tags, tag statistics, rename tags
+- **Tag Filtering**: Get notes by tag, get tags by frequency
+- **Recent Tags**: Last used tags for quick access
+- **Tag Analytics**: Usage patterns, popular tags
+
 #### Rationale:
-- **Local Storage**: No privacy concerns, works offline
-- **DAO Pattern**: Easy to migrate to IndexedDB or cloud storage later
-- **Simple Schema**: Covers MVP requirements while being extensible
+1. **Denormalized tags on notes**: Fast note retrieval and display
+2. **Separate tag collection**: Enables tag management and analytics  
+3. **Tag statistics**: Powers recent tags, popular tags, insights
+4. **Future-ready**: Easy to add tag colors, descriptions, hierarchies
 
 ---
 

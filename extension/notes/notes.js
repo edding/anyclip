@@ -6,10 +6,13 @@ class NotesApp {
     this.currentDeleteId = null;
     this.searchTerm = '';
     this.sortBy = 'newest';
+    this.selectedTag = '';
+    this.allTags = {};
     
     this.initializeElements();
     this.attachEventListeners();
     this.loadNotes();
+    this.loadTags();
   }
 
   initializeElements() {
@@ -32,7 +35,10 @@ class NotesApp {
       closeDeleteModal: document.getElementById('closeDeleteModal'),
       cancelDelete: document.getElementById('cancelDelete'),
       confirmDelete: document.getElementById('confirmDelete'),
-      toast: document.getElementById('toast')
+      toast: document.getElementById('toast'),
+      tagFilterSection: document.getElementById('tagFilterSection'),
+      tagList: document.getElementById('tagList'),
+      clearTagFilter: document.getElementById('clearTagFilter')
     };
   }
 
@@ -43,6 +49,7 @@ class NotesApp {
     
     this.elements.clearSearch.addEventListener('click', () => this.clearSearch());
     this.elements.sortSelect.addEventListener('change', (e) => this.handleSort(e.target.value));
+    this.elements.clearTagFilter.addEventListener('click', () => this.clearTagFilter());
     
     this.elements.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
     this.elements.closeModal.addEventListener('click', () => this.closeEditModal());
@@ -68,6 +75,7 @@ class NotesApp {
         this.notes = response.notes;
         this.applyFiltersAndSort();
         this.updateStats();
+        this.loadTags(); // Reload tags when notes change
       } else {
         this.showToast('Error loading notes: ' + response.error, 'error');
       }
@@ -77,9 +85,34 @@ class NotesApp {
     }
   }
 
+  async loadTags() {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'getAllTags' });
+      
+      if (response.success) {
+        this.allTags = response.data;
+        this.renderTagFilter();
+      } else {
+        console.log('Error loading tags: ' + response.error);
+        this.allTags = {};
+        this.elements.tagFilterSection.style.display = 'none';
+      }
+    } catch (error) {
+      console.error('Error loading tags:', error);
+      this.allTags = {};
+      this.elements.tagFilterSection.style.display = 'none';
+    }
+  }
+
   applyFiltersAndSort() {
     let filtered = [...this.notes];
     
+    // Apply tag filter first
+    if (this.selectedTag) {
+      filtered = filtered.filter(note => note.tags.includes(this.selectedTag));
+    }
+    
+    // Apply search filter
     if (this.searchTerm) {
       const term = this.searchTerm.toLowerCase();
       filtered = filtered.filter(note =>
@@ -89,6 +122,7 @@ class NotesApp {
       );
     }
     
+    // Apply sorting
     filtered.sort((a, b) => {
       switch (this.sortBy) {
         case 'oldest':
@@ -254,6 +288,7 @@ class NotesApp {
         
         this.closeEditModal();
         this.applyFiltersAndSort();
+        this.loadTags(); // Refresh tags after edit
         this.showToast('Note updated successfully', 'success');
       } else {
         this.showToast('Error updating note: ' + response.error, 'error');
@@ -294,6 +329,7 @@ class NotesApp {
         this.notes = this.notes.filter(n => n.id !== this.currentDeleteId);
         this.closeDeleteModal();
         this.applyFiltersAndSort();
+        this.loadTags(); // Refresh tags after delete
         this.updateStats();
         this.showToast('Note deleted successfully', 'success');
       } else {
@@ -309,11 +345,18 @@ class NotesApp {
     const totalNotes = this.notes.length;
     const filteredCount = this.filteredNotes.length;
     
-    if (this.searchTerm && filteredCount !== totalNotes) {
-      this.elements.notesCount.textContent = `${filteredCount} of ${totalNotes} notes`;
+    let countText = '';
+    if (this.selectedTag && this.searchTerm) {
+      countText = `${filteredCount} of ${totalNotes} notes (tag: "${this.selectedTag}", search: "${this.searchTerm}")`;
+    } else if (this.selectedTag) {
+      countText = `${filteredCount} of ${totalNotes} notes (tag: "${this.selectedTag}")`;
+    } else if (this.searchTerm) {
+      countText = `${filteredCount} of ${totalNotes} notes (search: "${this.searchTerm}")`;
     } else {
-      this.elements.notesCount.textContent = `${totalNotes} note${totalNotes === 1 ? '' : 's'}`;
+      countText = `${totalNotes} note${totalNotes === 1 ? '' : 's'}`;
     }
+    
+    this.elements.notesCount.textContent = countText;
 
     const totalChars = this.notes.reduce((sum, note) => sum + note.text.length, 0);
     const avgCharsPerNote = totalNotes > 0 ? Math.round(totalChars / totalNotes) : 0;
@@ -327,6 +370,55 @@ class NotesApp {
     setTimeout(() => {
       this.elements.toast.classList.remove('toast-show');
     }, 3000);
+  }
+
+  renderTagFilter() {
+    const tagEntries = Object.entries(this.allTags);
+    
+    if (tagEntries.length === 0) {
+      this.elements.tagFilterSection.style.display = 'none';
+      return;
+    }
+
+    // Sort tags by count (most used first)
+    tagEntries.sort((a, b) => b[1].count - a[1].count);
+
+    this.elements.tagFilterSection.style.display = 'block';
+    this.elements.tagList.innerHTML = tagEntries
+      .map(([tagName, tagData]) => `
+        <div class="filter-tag ${this.selectedTag === tagName ? 'active' : ''}" 
+             data-tag="${tagName}">
+          ${Utils.escapeHtml(tagName)}
+          <span class="tag-count">(${tagData.count})</span>
+        </div>
+      `).join('');
+
+    // Attach click event listeners to tag filters
+    this.elements.tagList.querySelectorAll('.filter-tag').forEach(tagEl => {
+      tagEl.addEventListener('click', (e) => {
+        const tagName = e.currentTarget.dataset.tag;
+        this.handleTagFilter(tagName);
+      });
+    });
+  }
+
+  handleTagFilter(tagName) {
+    if (this.selectedTag === tagName) {
+      // If clicking the same tag, clear the filter
+      this.clearTagFilter();
+    } else {
+      this.selectedTag = tagName;
+      this.applyFiltersAndSort();
+      this.updateStats();
+      this.renderTagFilter(); // Re-render to update active state
+    }
+  }
+
+  clearTagFilter() {
+    this.selectedTag = '';
+    this.applyFiltersAndSort();
+    this.updateStats();
+    this.renderTagFilter(); // Re-render to remove active state
   }
 }
 
