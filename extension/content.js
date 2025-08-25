@@ -109,6 +109,11 @@ async function handleSaveNote() {
   if (!selectedText) return;
 
   try {
+    if (!chrome || !chrome.runtime) {
+      showError('Extension context invalid - please reload page');
+      return;
+    }
+
     const response = await chrome.runtime.sendMessage({
       action: 'saveNote',
       data: {
@@ -119,7 +124,7 @@ async function handleSaveNote() {
       }
     });
 
-    if (response.success) {
+    if (response && response.success) {
       showSaveConfirmation();
       hideSelectionPopup();
       selection.removeAllRanges();
@@ -128,7 +133,11 @@ async function handleSaveNote() {
     }
   } catch (error) {
     console.error('Error saving note:', error);
-    showError('Failed to save note');
+    if (error.message.includes('Extension context invalidated')) {
+      showError('Extension reloaded - please refresh page');
+    } else {
+      showError('Failed to save note');
+    }
   }
 }
 
@@ -147,6 +156,14 @@ function showTagsDialog(selectedText) {
     existingDialog.remove();
   }
 
+  // Get current selection position
+  const selection = window.getSelection();
+  let selectionRect = null;
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    selectionRect = range.getBoundingClientRect();
+  }
+
   const dialog = document.createElement('div');
   dialog.id = 'tags-dialog';
   dialog.innerHTML = `
@@ -154,7 +171,14 @@ function showTagsDialog(selectedText) {
       <div class="dialog-content">
         <h3>Save Note with Tags</h3>
         <div class="note-preview">${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}</div>
-        <input type="text" id="tags-input" placeholder="Enter tags (comma separated)" />
+        <div class="tag-input-container">
+          <div class="tag-chips" id="tag-chips"></div>
+          <input type="text" id="tags-input" placeholder="Add tags..." />
+        </div>
+        <div class="recent-tags" id="recent-tags">
+          <div class="recent-tags-label">Recent tags:</div>
+          <div class="recent-tags-list" id="recent-tags-list"></div>
+        </div>
         <div class="dialog-actions">
           <button class="cancel-btn">Cancel</button>
           <button class="save-btn">Save Note</button>
@@ -165,27 +189,110 @@ function showTagsDialog(selectedText) {
 
   document.body.appendChild(dialog);
 
+  // Position dialog near the selection if available
+  if (selectionRect) {
+    const dialogContent = dialog.querySelector('.dialog-content');
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Calculate initial position (centered on selection)
+    let left = selectionRect.left + scrollX + (selectionRect.width / 2) - 200; // 200px = half dialog width
+    let top = selectionRect.bottom + scrollY + 20; // 20px offset below selection
+    
+    // Adjust if dialog would go off-screen horizontally
+    if (left < scrollX + 20) {
+      left = scrollX + 20;
+    } else if (left + 400 > scrollX + viewportWidth - 20) { // 400px = dialog width
+      left = scrollX + viewportWidth - 420;
+    }
+    
+    // Adjust if dialog would go off-screen vertically
+    if (top + 300 > scrollY + viewportHeight - 20) { // 300px = approx dialog height
+      top = selectionRect.top + scrollY - 320; // Show above selection
+    }
+    
+    // Ensure dialog stays within viewport
+    if (top < scrollY + 20) {
+      top = scrollY + 20;
+    }
+    
+    dialogContent.style.position = 'absolute';
+    dialogContent.style.left = `${left}px`;
+    dialogContent.style.top = `${top}px`;
+    dialogContent.style.margin = '0';
+    
+    // Remove centering from overlay
+    dialog.querySelector('.dialog-overlay').style.alignItems = 'flex-start';
+    dialog.querySelector('.dialog-overlay').style.justifyContent = 'flex-start';
+  }
+
   const tagsInput = dialog.querySelector('#tags-input');
+  const tagChips = dialog.querySelector('#tag-chips');
+  const recentTagsList = dialog.querySelector('#recent-tags-list');
   const saveBtn = dialog.querySelector('.save-btn');
   const cancelBtn = dialog.querySelector('.cancel-btn');
+  
+  let currentTags = [];
+
+  // Store reference for global access
+  dialog._currentTags = currentTags;
+
+  // Load and display recent tags
+  loadRecentTags(recentTagsList, currentTags);
+
+  // Tag input handling
+  tagsInput.addEventListener('input', () => {
+    handleTagInput(tagsInput, tagChips, currentTags);
+    updateRecentTagsDisplay(recentTagsList, currentTags);
+    dialog._currentTags = currentTags;
+  });
+
+  tagsInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      processCurrentInput(tagsInput, tagChips, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags);
+      dialog._currentTags = currentTags;
+    } else if (e.key === 'Backspace' && tagsInput.value === '' && currentTags.length > 0) {
+      // Remove last tag when backspacing on empty input
+      removeTag(currentTags.length - 1, tagChips, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags);
+      dialog._currentTags = currentTags;
+    }
+  });
 
   tagsInput.focus();
 
   saveBtn.addEventListener('click', async () => {
-    const tags = tagsInput.value.trim();
+    // Process any remaining input before saving
+    processCurrentInput(tagsInput, tagChips, currentTags);
+    
+    const tagsString = currentTags.join(', ');
     
     try {
+      if (!chrome || !chrome.runtime) {
+        showError('Extension context invalid - please reload page');
+        return;
+      }
+
       const response = await chrome.runtime.sendMessage({
         action: 'saveNote',
         data: {
           text: selectedText,
           url: window.location.href,
           title: document.title,
-          tags: tags
+          tags: tagsString
         }
       });
 
-      if (response.success) {
+      if (response && response.success) {
+        // Update recent tags
+        if (currentTags.length > 0) {
+          updateRecentTagsStorage(currentTags);
+        }
+        
         showSaveConfirmation();
         dialog.remove();
         hideSelectionPopup();
@@ -195,7 +302,11 @@ function showTagsDialog(selectedText) {
       }
     } catch (error) {
       console.error('Error saving note:', error);
-      showError('Failed to save note');
+      if (error.message.includes('Extension context invalidated')) {
+        showError('Extension reloaded - please refresh page');
+      } else {
+        showError('Failed to save note');
+      }
     }
   });
 
@@ -261,6 +372,204 @@ function showError(message) {
       }
     }, 300);
   }, 3000);
+}
+
+// Tag management functions
+function handleTagInput(input, chipContainer, currentTags) {
+  const value = input.value;
+  const parts = value.split(',');
+  
+  if (parts.length > 1) {
+    // User typed a comma, process all complete tags
+    for (let i = 0; i < parts.length - 1; i++) {
+      const tag = parts[i].trim().toLowerCase();
+      if (tag && !currentTags.includes(tag)) {
+        currentTags.push(tag);
+      }
+    }
+    input.value = parts[parts.length - 1].trim();
+    renderTagChips(chipContainer, currentTags);
+  }
+}
+
+function processCurrentInput(input, chipContainer, currentTags) {
+  const tag = input.value.trim().toLowerCase();
+  if (tag && !currentTags.includes(tag)) {
+    currentTags.push(tag);
+    input.value = '';
+    renderTagChips(chipContainer, currentTags);
+  }
+}
+
+function renderTagChips(container, tags) {
+  container.innerHTML = tags.map((tag, index) => `
+    <div class="tag-chip">
+      <span class="tag-text">${tag}</span>
+      <button class="tag-remove" data-index="${index}" type="button">×</button>
+    </div>
+  `).join('');
+  
+  // Add event listeners to remove buttons
+  container.querySelectorAll('.tag-remove').forEach(button => {
+    button.addEventListener('click', (e) => {
+      const index = parseInt(e.target.dataset.index);
+      removeTagHandler(index);
+    });
+  });
+}
+
+function removeTag(index, chipContainer, currentTags) {
+  currentTags.splice(index, 1);
+  renderTagChips(chipContainer, currentTags);
+}
+
+// Handler for removing tags
+function removeTagHandler(index) {
+  const dialog = document.getElementById('tags-dialog');
+  if (dialog) {
+    const chipContainer = dialog.querySelector('#tag-chips');
+    const recentTagsList = dialog.querySelector('#recent-tags-list');
+    const tagsInput = dialog.querySelector('#tags-input');
+    
+    // Get current tags from dialog
+    let currentTags = dialog._currentTags || [];
+    
+    if (index >= 0 && index < currentTags.length) {
+      currentTags.splice(index, 1);
+      dialog._currentTags = currentTags;
+      renderTagChips(chipContainer, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags);
+      
+      // Focus input after removing tag
+      if (tagsInput) {
+        tagsInput.focus();
+      }
+    }
+  }
+}
+
+// Keep the global function for backwards compatibility
+window.removeTagByIndex = removeTagHandler;
+
+async function loadRecentTags(container, currentTags) {
+  try {
+    // Check if chrome.storage is available
+    if (!chrome || !chrome.storage) {
+      console.warn('Chrome storage not available, using fallback tags');
+      const fallbackTags = ['work', 'important', 'research'];
+      updateRecentTagsDisplay(container, currentTags, fallbackTags);
+      return;
+    }
+
+    const result = await chrome.storage.local.get('recent_tags');
+    let recentTags = result.recent_tags || [];
+    
+    // If no recent tags exist, add some sample ones for testing
+    if (recentTags.length === 0) {
+      recentTags = ['work', 'important', 'research'];
+      try {
+        await chrome.storage.local.set({ recent_tags: recentTags });
+      } catch (storageError) {
+        console.warn('Could not save recent tags to storage:', storageError);
+      }
+    }
+    
+    updateRecentTagsDisplay(container, currentTags, recentTags);
+  } catch (error) {
+    console.warn('Error loading recent tags, using fallback:', error);
+    // Use fallback tags when storage fails
+    const fallbackTags = ['work', 'important', 'research'];
+    updateRecentTagsDisplay(container, currentTags, fallbackTags);
+  }
+}
+
+function updateRecentTagsDisplay(container, currentTags, recentTags = null) {
+  if (!recentTags) {
+    if (chrome && chrome.storage) {
+      chrome.storage.local.get('recent_tags').then(result => {
+        const recent = result.recent_tags || ['work', 'important', 'research'];
+        renderRecentTags(container, recent, currentTags);
+      }).catch(error => {
+        console.warn('Could not load recent tags:', error);
+        renderRecentTags(container, ['work', 'important', 'research'], currentTags);
+      });
+    } else {
+      renderRecentTags(container, ['work', 'important', 'research'], currentTags);
+    }
+  } else {
+    renderRecentTags(container, recentTags, currentTags);
+  }
+}
+
+function renderRecentTags(container, recentTags, currentTags) {
+  // Filter out tags that are already added
+  const availableTags = recentTags.filter(tag => !currentTags.includes(tag)).slice(0, 3);
+  
+  if (availableTags.length === 0) {
+    container.parentElement.style.display = 'none';
+    return;
+  }
+  
+  container.parentElement.style.display = 'block';
+  container.innerHTML = availableTags.map((tag, index) => `
+    <button class="recent-tag-btn" data-tag="${tag}" data-index="${index}" type="button">${tag}</button>
+  `).join('');
+  
+  // Add event listeners to recent tag buttons
+  container.querySelectorAll('.recent-tag-btn').forEach(button => {
+    button.addEventListener('click', (e) => {
+      const tag = e.target.dataset.tag;
+      addRecentTagHandler(tag);
+    });
+  });
+}
+
+// Handler for adding recent tags
+function addRecentTagHandler(tag) {
+  const dialog = document.getElementById('tags-dialog');
+  if (dialog) {
+    const chipContainer = dialog.querySelector('#tag-chips');
+    const recentTagsList = dialog.querySelector('#recent-tags-list');
+    const tagsInput = dialog.querySelector('#tags-input');
+    
+    // Get current tags array from dialog
+    let currentTags = dialog._currentTags || [];
+    
+    if (!currentTags.includes(tag)) {
+      currentTags.push(tag);
+      dialog._currentTags = currentTags;
+      renderTagChips(chipContainer, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags);
+      
+      // Clear any text in input and focus it
+      if (tagsInput) {
+        tagsInput.value = '';
+        tagsInput.focus();
+      }
+    }
+  }
+}
+
+// Keep the global function for backwards compatibility
+window.addRecentTag = addRecentTagHandler;
+
+async function updateRecentTagsStorage(newTags) {
+  try {
+    if (!chrome || !chrome.storage) {
+      console.warn('Chrome storage not available, cannot save recent tags');
+      return;
+    }
+
+    const result = await chrome.storage.local.get('recent_tags');
+    const recentTags = result.recent_tags || [];
+    
+    // Add new tags to the beginning, remove duplicates, keep only 3
+    const updatedTags = [...new Set([...newTags, ...recentTags])].slice(0, 3);
+    
+    await chrome.storage.local.set({ recent_tags: updatedTags });
+  } catch (error) {
+    console.warn('Error updating recent tags:', error);
+  }
 }
 
 document.addEventListener('selectionchange', () => {
@@ -441,19 +750,109 @@ style.textContent = `
   border-left: 3px solid #e5e7eb;
 }
 
-#tags-input {
-  width: 100%;
-  padding: 10px 12px;
+.tag-input-container {
   border: 2px solid #e5e7eb;
   border-radius: 6px;
-  font-size: 14px;
-  margin-bottom: 16px;
-  outline: none;
+  padding: 8px;
+  margin-bottom: 12px;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
   transition: border-color 0.2s;
 }
 
-#tags-input:focus {
+.tag-input-container:focus-within {
   border-color: #3b82f6;
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #bfdbfe;
+  gap: 4px;
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  color: #6366f1;
+  cursor: pointer;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tag-remove:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+#tags-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  padding: 4px;
+  font-size: 14px;
+  background: transparent;
+}
+
+#tags-input::placeholder {
+  color: #9ca3af;
+}
+
+.recent-tags {
+  margin-bottom: 16px;
+}
+
+.recent-tags-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.recent-tags-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recent-tag-btn {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.recent-tag-btn:hover {
+  background: #e5e7eb;
+  border-color: #d1d5db;
 }
 
 .dialog-actions {

@@ -170,6 +170,54 @@ class NotesStorage {
 
 ---
 
+## Tag Input UX Enhancement
+
+### Decision: Visual Tag Chips with Recent Tag Shortcuts
+
+**Date**: 2025-08-25  
+**Context**: Improve tag input experience with visual feedback and shortcuts.
+
+#### Implementation Details:
+
+**Tag Chip UI:**
+- Convert comma-separated tags into visual "chips/blobs"
+- Real-time parsing as user types
+- Individual delete buttons on each chip
+- Visual distinction between chips and text input
+
+**Recent Tags Shortcuts:**
+- Show 3 most recently used tags below input
+- Clickable shortcuts to add tags quickly  
+- Smart deduplication (don't show if already added)
+- Stored in chrome.storage.local under 'recent_tags' key
+
+**Technical Implementation:**
+```javascript
+// Tag storage format
+recentTags: ["work", "important", "research"] // Max 3, most recent first
+
+// Real-time tag parsing
+onTagInputChange() {
+  const tags = parseTagsInput(input.value);
+  renderTagChips(tags);
+  updateRecentTagShortcuts(tags);
+}
+```
+
+#### Rationale:
+1. **Visual Feedback**: Users see tags as they type, reducing errors
+2. **Shortcuts**: Frequently used tags are easily accessible
+3. **Modern UX**: Matches familiar tag interfaces (GitHub, Notion, etc.)
+4. **Efficiency**: Reduces typing for common tags
+
+#### Storage Strategy:
+- Recent tags stored separately from notes
+- Updated whenever a note is saved with tags
+- Maintains chronological order (most recent first)
+- Limited to 3 items to avoid UI clutter
+
+---
+
 ## Notes
 
 - All decisions are documented with rationale for future reference
