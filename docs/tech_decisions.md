@@ -13,7 +13,9 @@ This document tracks key technical decisions made during the development of the 
 The popup appears when text is selected based on these conditions:
 
 **Timing:**
-- 300ms delay after `selectionchange` event to avoid flickering during selection
+- Triggered on `mouseup` event (when user finishes selecting)
+- 50ms delay to let selection settle + 100ms debounce
+- `selectionchange` used only for cleanup when selection is cleared
 - Popup hides immediately on scroll, resize, or clicking outside
 
 **Validation Rules:**
@@ -51,15 +53,17 @@ function isValidSelection() {
 - ❌ Empty selections
 
 #### Rationale:
-1. **300ms delay**: Prevents popup from flickering while user is still selecting text
-2. **Minimum 2 chars**: Single characters are rarely useful as notes
-3. **Lenient validation**: Allow numbers, mixed content, and technical text which are common note-worthy selections
-4. **Smart hiding**: Disappears when user scrolls or clicks elsewhere to avoid UI clutter
+1. **Mouse-up trigger**: Only shows popup after user finishes selecting (more intuitive)
+2. **Dual delay system**: 50ms for selection settling + 100ms debounce prevents premature popup
+3. **Minimum 2 chars**: Single characters are rarely useful as notes
+4. **Lenient validation**: Allow numbers, mixed content, and technical text which are common note-worthy selections
+5. **Smart hiding**: Disappears when user scrolls or clicks elsewhere to avoid UI clutter
 
 #### Previous Issues Resolved:
 - **V1**: Too restrictive - rejected numbers and mixed punctuation
 - **V2**: Fixed Unicode support - was rejecting Chinese/international text
-- **V3**: Current implementation uses Unicode-aware regex (`\p{L}\p{N}`) to support all languages
+- **V3**: Fixed popup timing - was showing during selection instead of after
+- **V4**: Current implementation uses mouseup trigger and Unicode-aware regex (`\p{L}\p{N}`)
 
 ---
 

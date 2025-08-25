@@ -572,21 +572,36 @@ async function updateRecentTagsStorage(newTags) {
   }
 }
 
+document.addEventListener('mouseup', (e) => {
+  // Small delay to ensure selection has been finalized
+  setTimeout(() => {
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    
+    if (selectedText === lastSelection) return;
+    lastSelection = selectedText;
+    
+    if (selectedText && isValidSelection()) {
+      clearTimeout(selectionTimeout);
+      selectionTimeout = setTimeout(() => {
+        showSelectionPopup();
+      }, 100); // Reduced delay since we're already after mouseup
+    } else {
+      hideSelectionPopup();
+    }
+  }, 50); // Small delay to let selection settle
+});
+
+// Keep selectionchange for cleanup when selection is cleared
 document.addEventListener('selectionchange', () => {
-  clearTimeout(selectionTimeout);
-  
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
-  if (selectedText === lastSelection) return;
-  lastSelection = selectedText;
-  
-  if (selectedText && isValidSelection()) {
-    selectionTimeout = setTimeout(() => {
-      showSelectionPopup();
-    }, 300);
-  } else {
+  // Only hide if selection is actually cleared
+  if (!selectedText) {
+    clearTimeout(selectionTimeout);
     hideSelectionPopup();
+    lastSelection = '';
   }
 });
 
