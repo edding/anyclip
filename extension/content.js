@@ -296,13 +296,13 @@ function showTagsDialog(selectedText) {
   // Store reference for global access
   dialog._currentTags = currentTags;
 
-  // Load and display recent tags
+  // Load and display recent tags once when dialog opens
   loadRecentTags(recentTagsList, currentTags);
 
   // Tag input handling
   tagsInput.addEventListener('input', () => {
     handleTagInput(tagsInput, tagChips, currentTags);
-    updateRecentTagsDisplay(recentTagsList, currentTags);
+    updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
     dialog._currentTags = currentTags;
   });
 
@@ -310,12 +310,12 @@ function showTagsDialog(selectedText) {
     if (e.key === 'Enter') {
       e.preventDefault();
       processCurrentInput(tagsInput, tagChips, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
       dialog._currentTags = currentTags;
     } else if (e.key === 'Backspace' && tagsInput.value === '' && currentTags.length > 0) {
       // Remove last tag when backspacing on empty input
       removeTag(currentTags.length - 1, tagChips, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
       dialog._currentTags = currentTags;
     }
   });
@@ -502,7 +502,7 @@ function removeTagHandler(index) {
       currentTags.splice(index, 1);
       dialog._currentTags = currentTags;
       renderTagChips(chipContainer, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
       
       // Focus input after removing tag
       if (tagsInput) {
@@ -521,7 +521,9 @@ async function loadRecentTags(container, currentTags) {
   try {
     if (!chrome || !chrome.runtime) {
       console.warn('Chrome storage not available, using fallback tags');
-      updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
+      const fallbackTags = ['work', 'important', 'research'];
+      container._cachedRecentTags = fallbackTags;
+      updateRecentTagsDisplay(container, currentTags, fallbackTags);
       return;
     }
 
@@ -533,14 +535,20 @@ async function loadRecentTags(container, currentTags) {
     if (response && response.success) {
       const recentTags = response.data || [];
       console.log('Text-to-Notes: Loaded recent tags from storage:', recentTags);
+      // Cache the recent tags on the container element
+      container._cachedRecentTags = recentTags;
       updateRecentTagsDisplay(container, currentTags, recentTags);
     } else {
       console.warn('Failed to load recent tags, using fallback');
-      updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
+      const fallbackTags = ['work', 'important', 'research'];
+      container._cachedRecentTags = fallbackTags;
+      updateRecentTagsDisplay(container, currentTags, fallbackTags);
     }
   } catch (error) {
     console.error('Text-to-Notes: Error loading recent tags:', error);
-    updateRecentTagsDisplay(container, currentTags, ['work', 'important', 'research']);
+    const fallbackTags = ['work', 'important', 'research'];
+    container._cachedRecentTags = fallbackTags;
+    updateRecentTagsDisplay(container, currentTags, fallbackTags);
   }
 }
 
@@ -551,13 +559,21 @@ function updateRecentTagsDisplay(container, currentTags, recentTags = null) {
     recentTags
   });
   
-  if (!recentTags || recentTags.length === 0) {
-    console.log('Text-to-Notes: No recent tags provided, using default');
-    renderRecentTags(container, ['work', 'important', 'research'], currentTags);
+  // Use provided tags, or fall back to cached tags, or use default
+  let tagsToUse = recentTags;
+  if (!tagsToUse || tagsToUse.length === 0) {
+    if (container && container._cachedRecentTags) {
+      tagsToUse = container._cachedRecentTags;
+      console.log('Text-to-Notes: Using cached recent tags:', tagsToUse);
+    } else {
+      tagsToUse = ['work', 'important', 'research'];
+      console.log('Text-to-Notes: Using default fallback tags');
+    }
   } else {
-    console.log('Text-to-Notes: Using provided recent tags:', recentTags);
-    renderRecentTags(container, recentTags, currentTags);
+    console.log('Text-to-Notes: Using provided recent tags:', tagsToUse);
   }
+  
+  renderRecentTags(container, tagsToUse, currentTags);
 }
 
 function renderRecentTags(container, recentTags, currentTags) {
@@ -624,7 +640,7 @@ function addRecentTagHandler(tag) {
       currentTags.push(tag);
       dialog._currentTags = currentTags;
       renderTagChips(chipContainer, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags);
+      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
       
       // Clear any text in input and focus it
       if (tagsInput) {
