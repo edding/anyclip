@@ -214,14 +214,7 @@ function showTagsDialog(selectedText) {
       <div class="dialog-content">
         <h3>Save Note with Tags</h3>
         <div class="note-preview">${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}</div>
-        <div class="tag-input-container">
-          <div class="tag-chips" id="tag-chips"></div>
-          <input type="text" id="tags-input" placeholder="Add tags..." />
-        </div>
-        <div class="recent-tags" id="recent-tags">
-          <div class="recent-tags-label">Recent tags:</div>
-          <div class="recent-tags-list" id="recent-tags-list"></div>
-        </div>
+        <div id="tags-container"></div>
         <div class="dialog-actions">
           <button class="cancel-btn">Cancel</button>
           <button class="save-btn">Save Note</button>
@@ -285,47 +278,52 @@ function showTagsDialog(selectedText) {
       console.warn('Text-to-Notes: Error positioning dialog near mouse:', positionError);
     }
 
-  const tagsInput = dialog.querySelector('#tags-input');
-  const tagChips = dialog.querySelector('#tag-chips');
-  const recentTagsList = dialog.querySelector('#recent-tags-list');
+  const tagsContainer = dialog.querySelector('#tags-container');
   const saveBtn = dialog.querySelector('.save-btn');
   const cancelBtn = dialog.querySelector('.cancel-btn');
   
-  let currentTags = [];
+  try {
+    // Initialize tag input component
+    console.log('Text-to-Notes: Initializing TagInput component');
+    const tagInput = new TagInput(tagsContainer, {
+      placeholder: 'Add tags...',
+      showRecentTags: true,
+      recentTagsLimit: 3,
+      onTagsChange: (tags) => {
+        dialog._currentTags = tags;
+      }
+    });
 
-  // Store reference for global access
-  dialog._currentTags = currentTags;
+    // Store references for global access
+    dialog._tagInput = tagInput;
+    dialog._currentTags = [];
 
-  // Load and display recent tags once when dialog opens
-  loadRecentTags(recentTagsList, currentTags);
-
-  // Tag input handling
-  tagsInput.addEventListener('input', () => {
-    handleTagInput(tagsInput, tagChips, currentTags);
-    updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
-    dialog._currentTags = currentTags;
-  });
-
-  tagsInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      processCurrentInput(tagsInput, tagChips, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
-      dialog._currentTags = currentTags;
-    } else if (e.key === 'Backspace' && tagsInput.value === '' && currentTags.length > 0) {
-      // Remove last tag when backspacing on empty input
-      removeTag(currentTags.length - 1, tagChips, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
-      dialog._currentTags = currentTags;
-    }
-  });
-
-  tagsInput.focus();
+    console.log('Text-to-Notes: TagInput component initialized successfully');
+    tagInput.focus();
+  } catch (error) {
+    console.error('Text-to-Notes: Error initializing TagInput:', error);
+    
+    // Fallback: create a simple input
+    tagsContainer.innerHTML = `
+      <div class="tag-input-container">
+        <input type="text" class="tag-input" placeholder="Add tags..." />
+      </div>
+    `;
+    
+    const fallbackInput = tagsContainer.querySelector('.tag-input');
+    fallbackInput.focus();
+    
+    // Store fallback reference
+    dialog._tagInput = {
+      getTags: () => {
+        const value = fallbackInput.value.trim();
+        return value ? value.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+      }
+    };
+  }
 
   saveBtn.addEventListener('click', async () => {
-    // Process any remaining input before saving
-    processCurrentInput(tagsInput, tagChips, currentTags);
-    
+    const currentTags = dialog._tagInput.getTags();
     const tagsString = currentTags.join(', ');
     
     try {
@@ -345,11 +343,6 @@ function showTagsDialog(selectedText) {
       });
 
       if (response && response.success) {
-        // Update recent tags
-        if (currentTags.length > 0) {
-          updateRecentTagsStorage(currentTags);
-        }
-        
         showSaveConfirmation();
         dialog.remove();
         hideSelectionPopup();
@@ -371,11 +364,15 @@ function showTagsDialog(selectedText) {
     dialog.remove();
   });
 
-  tagsInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      saveBtn.click();
-    } else if (e.key === 'Escape') {
-      dialog.remove();
+  // Handle keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (dialog.parentNode) {
+      if (e.key === 'Enter' && (e.target.classList.contains('tag-input'))) {
+        e.preventDefault();
+        saveBtn.click();
+      } else if (e.key === 'Escape') {
+        dialog.remove();
+      }
     }
   });
 
@@ -437,222 +434,6 @@ function showError(message) {
     }, 300);
   }, 3000);
 }
-
-// Tag management functions
-function handleTagInput(input, chipContainer, currentTags) {
-  const value = input.value;
-  const parts = value.split(',');
-  
-  if (parts.length > 1) {
-    // User typed a comma, process all complete tags
-    for (let i = 0; i < parts.length - 1; i++) {
-      const tag = parts[i].trim().toLowerCase();
-      if (tag && !currentTags.includes(tag)) {
-        currentTags.push(tag);
-      }
-    }
-    input.value = parts[parts.length - 1].trim();
-    renderTagChips(chipContainer, currentTags);
-  }
-}
-
-function processCurrentInput(input, chipContainer, currentTags) {
-  const tag = input.value.trim().toLowerCase();
-  if (tag && !currentTags.includes(tag)) {
-    currentTags.push(tag);
-    input.value = '';
-    renderTagChips(chipContainer, currentTags);
-  }
-}
-
-function renderTagChips(container, tags) {
-  container.innerHTML = tags.map((tag, index) => `
-    <div class="tag-chip">
-      <span class="tag-text">${tag}</span>
-      <button class="tag-remove" data-index="${index}" type="button">×</button>
-    </div>
-  `).join('');
-  
-  // Add event listeners to remove buttons
-  container.querySelectorAll('.tag-remove').forEach(button => {
-    button.addEventListener('click', (e) => {
-      const index = parseInt(e.target.dataset.index);
-      removeTagHandler(index);
-    });
-  });
-}
-
-function removeTag(index, chipContainer, currentTags) {
-  currentTags.splice(index, 1);
-  renderTagChips(chipContainer, currentTags);
-}
-
-// Handler for removing tags
-function removeTagHandler(index) {
-  const dialog = document.getElementById('tags-dialog');
-  if (dialog) {
-    const chipContainer = dialog.querySelector('#tag-chips');
-    const recentTagsList = dialog.querySelector('#recent-tags-list');
-    const tagsInput = dialog.querySelector('#tags-input');
-    
-    // Get current tags from dialog
-    let currentTags = dialog._currentTags || [];
-    
-    if (index >= 0 && index < currentTags.length) {
-      currentTags.splice(index, 1);
-      dialog._currentTags = currentTags;
-      renderTagChips(chipContainer, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
-      
-      // Focus input after removing tag
-      if (tagsInput) {
-        tagsInput.focus();
-      }
-    }
-  }
-}
-
-// Keep the global function for backwards compatibility
-window.removeTagByIndex = removeTagHandler;
-
-async function loadRecentTags(container, currentTags) {
-  console.log('Text-to-Notes: loadRecentTags called');
-  
-  try {
-    if (!chrome || !chrome.runtime) {
-      console.warn('Chrome storage not available, using fallback tags');
-      const fallbackTags = ['work', 'important', 'research'];
-      container._cachedRecentTags = fallbackTags;
-      updateRecentTagsDisplay(container, currentTags, fallbackTags);
-      return;
-    }
-
-    const response = await chrome.runtime.sendMessage({
-      action: 'getRecentTags',
-      data: { limit: 3 }
-    });
-
-    if (response && response.success) {
-      const recentTags = response.data || [];
-      console.log('Text-to-Notes: Loaded recent tags from storage:', recentTags);
-      // Cache the recent tags on the container element
-      container._cachedRecentTags = recentTags;
-      updateRecentTagsDisplay(container, currentTags, recentTags);
-    } else {
-      console.warn('Failed to load recent tags, using fallback');
-      const fallbackTags = ['work', 'important', 'research'];
-      container._cachedRecentTags = fallbackTags;
-      updateRecentTagsDisplay(container, currentTags, fallbackTags);
-    }
-  } catch (error) {
-    console.error('Text-to-Notes: Error loading recent tags:', error);
-    const fallbackTags = ['work', 'important', 'research'];
-    container._cachedRecentTags = fallbackTags;
-    updateRecentTagsDisplay(container, currentTags, fallbackTags);
-  }
-}
-
-function updateRecentTagsDisplay(container, currentTags, recentTags = null) {
-  console.log('Text-to-Notes: updateRecentTagsDisplay called with:', {
-    container: container ? 'exists' : 'null',
-    currentTags,
-    recentTags
-  });
-  
-  // Use provided tags, or fall back to cached tags, or use default
-  let tagsToUse = recentTags;
-  if (!tagsToUse || tagsToUse.length === 0) {
-    if (container && container._cachedRecentTags) {
-      tagsToUse = container._cachedRecentTags;
-      console.log('Text-to-Notes: Using cached recent tags:', tagsToUse);
-    } else {
-      tagsToUse = ['work', 'important', 'research'];
-      console.log('Text-to-Notes: Using default fallback tags');
-    }
-  } else {
-    console.log('Text-to-Notes: Using provided recent tags:', tagsToUse);
-  }
-  
-  renderRecentTags(container, tagsToUse, currentTags);
-}
-
-function renderRecentTags(container, recentTags, currentTags) {
-  console.log('Text-to-Notes: renderRecentTags called with:', {
-    container: container ? container.id || 'exists' : 'null',
-    recentTags,
-    currentTags
-  });
-  
-  if (!container) {
-    console.error('Text-to-Notes: No container provided to renderRecentTags');
-    return;
-  }
-  
-  // Filter out tags that are already added
-  const availableTags = recentTags.filter(tag => !currentTags.includes(tag)).slice(0, 3);
-  console.log('Text-to-Notes: Available tags after filtering:', availableTags);
-  
-  if (availableTags.length === 0) {
-    console.log('Text-to-Notes: No available tags, hiding recent tags section');
-    if (container.parentElement) {
-      container.parentElement.style.display = 'none';
-    }
-    return;
-  }
-  
-  console.log('Text-to-Notes: Showing recent tags section');
-  if (container.parentElement) {
-    container.parentElement.style.display = 'block';
-  }
-  
-  const buttonsHTML = availableTags.map((tag, index) => `
-    <button class="recent-tag-btn" data-tag="${tag}" data-index="${index}" type="button">${tag}</button>
-  `).join('');
-  
-  console.log('Text-to-Notes: Setting container innerHTML:', buttonsHTML);
-  container.innerHTML = buttonsHTML;
-  
-  // Add event listeners to recent tag buttons
-  const buttons = container.querySelectorAll('.recent-tag-btn');
-  console.log('Text-to-Notes: Found', buttons.length, 'recent tag buttons');
-  
-  buttons.forEach(button => {
-    button.addEventListener('click', (e) => {
-      const tag = e.target.dataset.tag;
-      console.log('Text-to-Notes: Recent tag clicked:', tag);
-      addRecentTagHandler(tag);
-    });
-  });
-}
-
-// Handler for adding recent tags
-function addRecentTagHandler(tag) {
-  const dialog = document.getElementById('tags-dialog');
-  if (dialog) {
-    const chipContainer = dialog.querySelector('#tag-chips');
-    const recentTagsList = dialog.querySelector('#recent-tags-list');
-    const tagsInput = dialog.querySelector('#tags-input');
-    
-    // Get current tags array from dialog
-    let currentTags = dialog._currentTags || [];
-    
-    if (!currentTags.includes(tag)) {
-      currentTags.push(tag);
-      dialog._currentTags = currentTags;
-      renderTagChips(chipContainer, currentTags);
-      updateRecentTagsDisplay(recentTagsList, currentTags); // Will use cached tags
-      
-      // Clear any text in input and focus it
-      if (tagsInput) {
-        tagsInput.value = '';
-        tagsInput.focus();
-      }
-    }
-  }
-}
-
-// Keep the global function for backwards compatibility
-window.addRecentTag = addRecentTagHandler;
 
 async function updateRecentTagsStorage(newTags) {
   // This function is now handled by the storage layer when notes are saved
@@ -918,6 +699,20 @@ style.textContent = `
 
 .tag-remove:hover {
   background: rgba(99, 102, 241, 0.1);
+}
+
+.tag-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  padding: 4px;
+  font-size: 14px;
+  background: transparent;
+}
+
+.tag-input::placeholder {
+  color: #9ca3af;
 }
 
 #tags-input {

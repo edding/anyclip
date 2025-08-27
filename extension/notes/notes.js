@@ -24,6 +24,7 @@ class NotesApp {
       storageInfo: document.getElementById('storageInfo'),
       emptyState: document.getElementById('emptyState'),
       notesContainer: document.getElementById('notesContainer'),
+      manageNotesBtn: document.getElementById('manageNotesBtn'),
       editModal: document.getElementById('editModal'),
       editForm: document.getElementById('editForm'),
       editText: document.getElementById('editText'),
@@ -50,6 +51,7 @@ class NotesApp {
     this.elements.clearSearch.addEventListener('click', () => this.clearSearch());
     this.elements.sortSelect.addEventListener('change', (e) => this.handleSort(e.target.value));
     this.elements.clearTagFilter.addEventListener('click', () => this.clearTagFilter());
+    this.elements.manageNotesBtn.addEventListener('click', () => this.openFullManager());
     
     this.elements.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
     this.elements.closeModal.addEventListener('click', () => this.closeEditModal());
@@ -419,6 +421,11 @@ class NotesApp {
     this.applyFiltersAndSort();
     this.updateStats();
     this.renderTagFilter(); // Re-render to remove active state
+  }
+
+  openFullManager() {
+    // Open the full-page notes manager in a new tab
+    chrome.tabs.create({ url: 'notes/manage.html' });
   }
 }
 

@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes Manager - Text-to-Notes</title>
+    <link rel="stylesheet" href="manage.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1 class="app-title">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17,21 17,13 7,13 7,21"></polyline>
+                            <polyline points="7,3 7,8 15,8"></polyline>
+                        </svg>
+                        Notes Manager
+                    </h1>
+                    <div class="stats-summary">
+                        <span id="totalNotesCount">0 notes</span>
+                        <span class="stats-separator">•</span>
+                        <span id="totalTagsCount">0 tags</span>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button id="exportNotesBtn" class="btn btn-secondary" title="Export notes">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export
+                    </button>
+                    <button id="importNotesBtn" class="btn btn-secondary" title="Import notes">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17,8 12,3 7,8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        Import
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-main">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3>Views</h3>
+                    <nav class="sidebar-nav">
+                        <button class="nav-item active" data-view="all">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 3h18v18H3zM9 9h6v6H9z"></path>
+                            </svg>
+                            All Notes
+                        </button>
+                        <button class="nav-item" data-view="recent">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12,6 12,12 16,14"></polyline>
+                            </svg>
+                            Recent
+                        </button>
+                        <button class="nav-item" data-view="untagged">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                                <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                                <path d="m15 5-3 3m0 0-3-3m3 3V2"></path>
+                            </svg>
+                            Untagged
+                        </button>
+                    </nav>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>Tags</h3>
+                    <div class="tag-management">
+                        <div class="tag-search">
+                            <input type="text" id="tagSearchInput" placeholder="Search tags..." class="tag-search-input">
+                        </div>
+                        <div id="tagsList" class="tags-list">
+                            <!-- Tags will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Toolbar -->
+                <div class="content-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-container">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                            <input type="text" id="globalSearchInput" placeholder="Search notes..." class="search-input">
+                            <button id="clearGlobalSearch" class="clear-search" title="Clear search">×</button>
+                        </div>
+                    </div>
+                    <div class="toolbar-right">
+                        <div class="bulk-actions" id="bulkActions" style="display: none;">
+                            <span class="bulk-count">0 selected</span>
+                            <button id="bulkDeleteBtn" class="btn btn-danger btn-sm">Delete</button>
+                            <button id="bulkTagBtn" class="btn btn-secondary btn-sm">Add Tags</button>
+                            <button id="bulkExportBtn" class="btn btn-secondary btn-sm">Export</button>
+                        </div>
+                        <div class="view-controls">
+                            <select id="sortSelect" class="sort-select">
+                                <option value="newest">Newest first</option>
+                                <option value="oldest">Oldest first</option>
+                                <option value="alphabetical">A-Z</option>
+                                <option value="domain">By domain</option>
+                            </select>
+                            <button id="toggleViewBtn" class="btn btn-icon" title="Toggle view">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="3" width="7" height="7"></rect>
+                                    <rect x="3" y="14" width="7" height="7"></rect>
+                                    <rect x="14" y="14" width="7" height="7"></rect>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes Container -->
+                <div class="notes-content">
+                    <div id="emptyState" class="empty-state">
+                        <div class="empty-icon">📝</div>
+                        <h2>No notes found</h2>
+                        <p>Start selecting text on web pages to create your first note!</p>
+                    </div>
+
+                    <div id="notesGrid" class="notes-grid">
+                        <!-- Notes will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Edit Note Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h2>Edit Note</h2>
+                <button id="closeEditModal" class="close-button">×</button>
+            </div>
+            <form id="editForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="editText">Note Content</label>
+                        <textarea id="editText" rows="8" required class="form-control"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group flex-1">
+                            <label for="editTags">Tags</label>
+                            <input type="text" id="editTags" placeholder="work, important, ideas" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="editUrl">Source URL</label>
+                            <input type="url" id="editUrl" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="cancelEdit" class="btn btn-secondary">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Tag Modal -->
+    <div id="bulkTagModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Tags to Selected Notes</h2>
+                <button id="closeBulkTagModal" class="close-button">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tags to add</label>
+                    <div id="bulkTagsContainer"></div>
+                    <small class="form-help">Enter tags separated by commas or click recent tags</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="cancelBulkTag" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="applyBulkTag" class="btn btn-primary">Add Tags</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Confirm Delete</h2>
+                <button id="closeDeleteModal" class="close-button">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteMessage">Are you sure you want to delete this note?</p>
+                <div id="deletePreview" class="delete-preview"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" id="cancelDelete" class="btn btn-secondary">Cancel</button>
+                <button type="button" id="confirmDelete" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="importFileInput" accept=".json" style="display: none;">
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="../lib/utils.js"></script>
+    <script src="manage.js"></script>
+</body>
+</html>
