@@ -53,13 +53,13 @@ function showSelectionPopup() {
     const scrollY = window.scrollY;
     const scrollX = window.scrollX;
 
-    // Position popup near mouse, offset to avoid covering the selection
-    let top = lastMousePosition.y + scrollY - popupRect.height - 8;
+    // Position popup above mouse to avoid covering selected text
+    let top = lastMousePosition.y + scrollY - popupRect.height - 15; // 15px gap above mouse
     let left = lastMousePosition.x + scrollX - (popupRect.width / 2);
 
-    // If popup would be above viewport, show below mouse
-    if (top < scrollY) {
-      top = lastMousePosition.y + scrollY + 8;
+    // If popup would be above viewport, show below mouse (but try to avoid this)
+    if (top < scrollY + 10) {
+      top = lastMousePosition.y + scrollY + 15; // 15px below mouse as fallback
     }
 
     // Keep popup within viewport horizontally
