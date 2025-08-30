@@ -3,6 +3,46 @@ let selectionTimeout = null;
 let lastSelection = '';
 let lastMousePosition = { x: 0, y: 0 };
 
+// Theme support for content script
+async function applyTheme() {
+  try {
+    const result = await chrome.storage.local.get('app_theme');
+    const theme = result.app_theme || 'light';
+    
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.style.setProperty('--dialog-bg', '#1e293b');
+      root.style.setProperty('--dialog-text', '#f8fafc');
+      root.style.setProperty('--dialog-text-secondary', '#cbd5e1');
+      root.style.setProperty('--dialog-border', '#334155');
+      root.style.setProperty('--dialog-preview-bg', '#334155');
+      root.style.setProperty('--dialog-shadow', 'rgba(0, 0, 0, 0.4)');
+      root.style.setProperty('--dialog-accent', '#3b82f6');
+      root.style.setProperty('--dialog-placeholder', '#94a3b8');
+      root.style.setProperty('--dialog-chip-bg', '#374151');
+      root.style.setProperty('--dialog-chip-text', '#60a5fa');
+      root.style.setProperty('--dialog-chip-border', '#4b5563');
+    } else {
+      root.style.setProperty('--dialog-bg', 'white');
+      root.style.setProperty('--dialog-text', '#1f2937');
+      root.style.setProperty('--dialog-text-secondary', '#6b7280');
+      root.style.setProperty('--dialog-border', '#e5e7eb');
+      root.style.setProperty('--dialog-preview-bg', '#f9fafb');
+      root.style.setProperty('--dialog-shadow', 'rgba(0, 0, 0, 0.1)');
+      root.style.setProperty('--dialog-accent', '#3b82f6');
+      root.style.setProperty('--dialog-placeholder', '#9ca3af');
+      root.style.setProperty('--dialog-chip-bg', '#eff6ff');
+      root.style.setProperty('--dialog-chip-text', '#1d4ed8');
+      root.style.setProperty('--dialog-chip-border', '#bfdbfe');
+    }
+  } catch (error) {
+    console.error('Error applying theme:', error);
+  }
+}
+
+// Initialize theme on content script load
+applyTheme();
+
 function createSelectionPopup() {
   if (selectionPopup) return selectionPopup;
 
@@ -183,6 +223,9 @@ function handleSaveWithTags() {
 function showTagsDialog(selectedText) {
   try {
     console.log('Text-to-Notes: showTagsDialog called with text:', selectedText);
+    
+    // Apply current theme before showing dialog
+    applyTheme();
     
     const existingDialog = document.getElementById('tags-dialog');
     if (existingDialog) {
@@ -445,6 +488,12 @@ document.addEventListener('mouseup', (e) => {
   // Store mouse position for later use in dialog positioning
   lastMousePosition = { x: e.clientX, y: e.clientY };
   
+  // Only show popup if Option/Alt key is held down
+  if (!e.altKey) {
+    hideSelectionPopup();
+    return;
+  }
+  
   // Small delay to ensure selection has been finalized
   setTimeout(() => {
     const selection = window.getSelection();
@@ -612,10 +661,10 @@ style.textContent = `
 }
 
 .dialog-content {
-  background: white !important;
+  background: var(--dialog-bg, white) !important;
   border-radius: 12px !important;
   padding: 20px !important;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 20px 25px -5px var(--dialog-shadow, rgba(0, 0, 0, 0.1)) !important;
   width: 90% !important;
   max-width: 400px !important;
   position: relative !important;
@@ -623,30 +672,34 @@ style.textContent = `
   pointer-events: auto !important;
   visibility: visible !important;
   opacity: 1 !important;
+  transition: background-color 0.3s ease !important;
 }
 
 .dialog-content h3 {
   margin: 0 0 12px 0 !important;
   font-size: 18px !important;
   font-weight: 600 !important;
-  color: #1f2937 !important;
+  color: var(--dialog-text, #1f2937) !important;
   display: block !important;
   visibility: visible !important;
 }
 
 .note-preview {
-  background: #f9fafb;
+  background: var(--dialog-preview-bg, #f9fafb);
   padding: 12px;
   border-radius: 6px;
   font-size: 14px;
-  color: #6b7280;
+  color: var(--dialog-text-secondary, #6b7280);
   margin-bottom: 16px;
-  border-left: 3px solid #e5e7eb;
+  border-left: 3px solid var(--dialog-border, #e5e7eb);
+  transition: background-color 0.3s ease;
 }
 
 .tag-input-container {
-  border: 2px solid #e5e7eb;
+  border: 2px solid var(--dialog-border, #e5e7eb);
   border-radius: 6px;
+  background: var(--dialog-bg, white);
+  transition: border-color 0.3s ease, background-color 0.3s ease;
   padding: 8px;
   margin-bottom: 12px;
   min-height: 44px;
@@ -658,7 +711,7 @@ style.textContent = `
 }
 
 .tag-input-container:focus-within {
-  border-color: #3b82f6;
+  border-color: var(--dialog-accent, #3b82f6);
 }
 
 .tag-chips {
@@ -671,14 +724,15 @@ style.textContent = `
 .tag-chip {
   display: inline-flex;
   align-items: center;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--dialog-chip-bg, #eff6ff);
+  color: var(--dialog-chip-text, #1d4ed8);
   padding: 4px 8px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 500;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--dialog-chip-border, #bfdbfe);
   gap: 4px;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .tag-remove {
@@ -709,10 +763,11 @@ style.textContent = `
   padding: 4px;
   font-size: 14px;
   background: transparent;
+  color: var(--dialog-text, #1f2937);
 }
 
 .tag-input::placeholder {
-  color: #9ca3af;
+  color: var(--dialog-placeholder, #9ca3af);
 }
 
 #tags-input {
@@ -722,6 +777,8 @@ style.textContent = `
   outline: none;
   padding: 4px;
   font-size: 14px;
+  background: transparent;
+  color: var(--dialog-text, #1f2937);
   background: transparent;
 }
 

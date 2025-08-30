@@ -11,6 +11,7 @@ class NotesApp {
     
     this.initializeElements();
     this.attachEventListeners();
+    this.initializeTheme();
     this.loadNotes();
     this.loadTags();
   }
@@ -25,6 +26,7 @@ class NotesApp {
       emptyState: document.getElementById('emptyState'),
       notesContainer: document.getElementById('notesContainer'),
       manageNotesBtn: document.getElementById('manageNotesBtn'),
+      themeToggleBtn: document.getElementById('themeToggleBtn'),
       editModal: document.getElementById('editModal'),
       editForm: document.getElementById('editForm'),
       editText: document.getElementById('editText'),
@@ -52,6 +54,7 @@ class NotesApp {
     this.elements.sortSelect.addEventListener('change', (e) => this.handleSort(e.target.value));
     this.elements.clearTagFilter.addEventListener('click', () => this.clearTagFilter());
     this.elements.manageNotesBtn.addEventListener('click', () => this.openFullManager());
+    this.elements.themeToggleBtn.addEventListener('click', () => this.toggleTheme());
     
     this.elements.editForm.addEventListener('submit', (e) => this.handleEditSubmit(e));
     this.elements.closeModal.addEventListener('click', () => this.closeEditModal());
@@ -421,6 +424,52 @@ class NotesApp {
     this.applyFiltersAndSort();
     this.updateStats();
     this.renderTagFilter(); // Re-render to remove active state
+  }
+
+  async initializeTheme() {
+    try {
+      const storage = new NotesStorage();
+      const theme = await storage.getTheme();
+      this.applyTheme(theme);
+    } catch (error) {
+      console.error('Error initializing theme:', error);
+      this.applyTheme('light'); // fallback
+    }
+  }
+
+  async toggleTheme() {
+    try {
+      console.log('NotesStorage available:', typeof NotesStorage);
+      const storage = new NotesStorage();
+      console.log('Storage instance created:', storage);
+      const newTheme = await storage.toggleTheme();
+      console.log('Theme toggled to:', newTheme);
+      this.applyTheme(newTheme);
+      this.showToast(`Switched to ${newTheme} mode`, 'info');
+    } catch (error) {
+      console.error('Error toggling theme:', error);
+      // Fallback: toggle theme manually if storage fails
+      const currentTheme = document.body.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      this.applyTheme(newTheme);
+      this.showToast(`Theme switched to ${newTheme} mode (local only)`, 'info');
+    }
+  }
+
+  applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    
+    // Update theme toggle button icons
+    const sunIcon = this.elements.themeToggleBtn.querySelector('.sun-icon');
+    const moonIcon = this.elements.themeToggleBtn.querySelector('.moon-icon');
+    
+    if (theme === 'dark') {
+      sunIcon.style.display = 'none';
+      moonIcon.style.display = 'block';
+    } else {
+      sunIcon.style.display = 'block';
+      moonIcon.style.display = 'none';
+    }
   }
 
   openFullManager() {

@@ -3,7 +3,8 @@ class NotesStorage {
     this.STORAGE_KEYS = {
       NOTES: 'notes_collection',
       TAGS: 'tags_collection',
-      TAG_STATS: 'tag_statistics'
+      TAG_STATS: 'tag_statistics',
+      THEME: 'app_theme'
     };
   }
 
@@ -332,6 +333,39 @@ class NotesStorage {
     }
     
     return colors[Math.abs(hash) % colors.length];
+  }
+
+  // Theme management methods
+  async getTheme() {
+    try {
+      const result = await chrome.storage.local.get(this.STORAGE_KEYS.THEME);
+      return result[this.STORAGE_KEYS.THEME] || 'light';
+    } catch (error) {
+      console.error('Error getting theme:', error);
+      return 'light';
+    }
+  }
+
+  async setTheme(theme) {
+    try {
+      await chrome.storage.local.set({ [this.STORAGE_KEYS.THEME]: theme });
+      return theme;
+    } catch (error) {
+      console.error('Error setting theme:', error);
+      throw error;
+    }
+  }
+
+  async toggleTheme() {
+    try {
+      const currentTheme = await this.getTheme();
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      await this.setTheme(newTheme);
+      return newTheme;
+    } catch (error) {
+      console.error('Error toggling theme:', error);
+      throw error;
+    }
   }
 }
 

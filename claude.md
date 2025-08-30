@@ -74,7 +74,7 @@ STORAGE_KEYS = {
 ## User Interaction Flow
 
 ### Text Selection & Clipping
-1. **Mouse-up trigger**: Popup appears above cursor after text selection
+1. **Option+Mouse-up trigger**: Popup appears above cursor when Option/Alt key is held during text selection
 2. **PopClip-style interface**: "Save Note" and "+ Tags" buttons
 3. **Tag dialog**: Visual tag chips with recent tags shortcuts
 4. **Mouse-position based**: All UI appears near cursor for natural flow

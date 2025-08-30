@@ -14,6 +14,7 @@ class NotesManager {
     this.initializeElements();
     this.attachEventListeners();
     this.initializeTagInput();
+    this.initializeTheme();
     this.loadData();
   }
 
@@ -22,6 +23,7 @@ class NotesManager {
       // Header
       totalNotesCount: document.getElementById('totalNotesCount'),
       totalTagsCount: document.getElementById('totalTagsCount'),
+      themeToggleBtn: document.getElementById('themeToggleBtn'),
       exportNotesBtn: document.getElementById('exportNotesBtn'),
       importNotesBtn: document.getElementById('importNotesBtn'),
       importFileInput: document.getElementById('importFileInput'),
@@ -85,6 +87,7 @@ class NotesManager {
 
   attachEventListeners() {
     // Header actions
+    this.elements.themeToggleBtn.addEventListener('click', () => this.toggleTheme());
     this.elements.exportNotesBtn.addEventListener('click', () => this.exportNotes());
     this.elements.importNotesBtn.addEventListener('click', () => this.elements.importFileInput.click());
     this.elements.importFileInput.addEventListener('change', (e) => this.importNotes(e));
@@ -796,6 +799,52 @@ class NotesManager {
     this.closeEditModal();
     this.closeDeleteModal();
     this.closeBulkTagModal();
+  }
+
+  async initializeTheme() {
+    try {
+      const storage = new NotesStorage();
+      const theme = await storage.getTheme();
+      this.applyTheme(theme);
+    } catch (error) {
+      console.error('Error initializing theme:', error);
+      this.applyTheme('light'); // fallback
+    }
+  }
+
+  async toggleTheme() {
+    try {
+      console.log('NotesStorage available:', typeof NotesStorage);
+      const storage = new NotesStorage();
+      console.log('Storage instance created:', storage);
+      const newTheme = await storage.toggleTheme();
+      console.log('Theme toggled to:', newTheme);
+      this.applyTheme(newTheme);
+      this.showToast(`Switched to ${newTheme} mode`, 'info');
+    } catch (error) {
+      console.error('Error toggling theme:', error);
+      // Fallback: toggle theme manually if storage fails
+      const currentTheme = document.body.getAttribute('data-theme') || 'light';
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      this.applyTheme(newTheme);
+      this.showToast(`Theme switched to ${newTheme} mode (local only)`, 'info');
+    }
+  }
+
+  applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    
+    // Update theme toggle button icons
+    const sunIcon = this.elements.themeToggleBtn.querySelector('.sun-icon');
+    const moonIcon = this.elements.themeToggleBtn.querySelector('.moon-icon');
+    
+    if (theme === 'dark') {
+      sunIcon.style.display = 'none';
+      moonIcon.style.display = 'block';
+    } else {
+      sunIcon.style.display = 'block';
+      moonIcon.style.display = 'none';
+    }
   }
 
   updateStats() {
