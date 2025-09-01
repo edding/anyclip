@@ -2,6 +2,8 @@ let selectionPopup = null;
 let selectionTimeout = null;
 let lastSelection = '';
 let lastMousePosition = { x: 0, y: 0 };
+let imagePopup = null;
+let hoveredImage = null;
 
 // Theme support for content script
 async function applyTheme() {
@@ -137,6 +139,444 @@ function hideSelectionPopup() {
   if (selectionPopup) {
     selectionPopup.style.display = 'none';
   }
+}
+
+// Image capture functions
+function createImagePopup() {
+  if (imagePopup) return imagePopup;
+
+  imagePopup = document.createElement('div');
+  imagePopup.id = 'text-to-notes-image-popup';
+  imagePopup.innerHTML = `
+    <div class="popup-content">
+      <button class="save-image-btn" title="Save image as note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="9" cy="9" r="2"></circle>
+          <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+        </svg>
+        <span>Save Image</span>
+      </button>
+      <button class="save-image-with-tags-btn" title="Save image with tags">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+          <line x1="7" y1="7" x2="7.01" y2="7"></line>
+        </svg>
+        <span>+ Tags</span>
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(imagePopup);
+
+  imagePopup.querySelector('.save-image-btn').addEventListener('click', handleSaveImage);
+  imagePopup.querySelector('.save-image-with-tags-btn').addEventListener('click', handleSaveImageWithTags);
+
+  return imagePopup;
+}
+
+function showImagePopup(imageElement, mouseX, mouseY) {
+  if (!imageElement || !isValidImage(imageElement)) {
+    hideImagePopup();
+    return;
+  }
+
+  // Clear any pending hide timeout
+  if (typeof imagePopupTimeout !== 'undefined' && imagePopupTimeout) {
+    clearTimeout(imagePopupTimeout);
+    imagePopupTimeout = null;
+  }
+
+  hoveredImage = imageElement;
+  const popup = createImagePopup();
+
+  // Position popup next to the mouse cursor (PopClip-style)
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const scrollY = window.scrollY;
+  const scrollX = window.scrollX;
+  
+  const popupWidth = popup.offsetWidth || 200; // fallback width
+  const popupHeight = popup.offsetHeight || 60; // fallback height
+  
+  // Try positioning to the right of mouse first
+  let left = mouseX + scrollX + 15; // 15px to the right of cursor
+  let top = mouseY + scrollY - (popupHeight / 2); // vertically centered on cursor
+  
+  // If popup would go off right edge, position to the left
+  if (left + popupWidth > scrollX + viewportWidth - 10) {
+    left = mouseX + scrollX - popupWidth - 15; // 15px to the left of cursor
+  }
+  
+  // If popup would go off left edge, position on right but closer
+  if (left < scrollX + 10) {
+    left = mouseX + scrollX + 10;
+  }
+  
+  // Keep popup within viewport vertically
+  if (top < scrollY + 10) {
+    top = scrollY + 10;
+  } else if (top + popupHeight > scrollY + viewportHeight - 10) {
+    top = scrollY + viewportHeight - popupHeight - 10;
+  }
+
+  popup.style.display = 'block';
+  popup.style.top = `${top}px`;
+  popup.style.left = `${left}px`;
+  popup.style.opacity = '0';
+  popup.style.transform = 'translateY(-10px) scale(0.95)';
+
+  requestAnimationFrame(() => {
+    popup.style.opacity = '1';
+    popup.style.transform = 'translateY(0) scale(1)';
+  });
+}
+
+function hideImagePopup() {
+  if (imagePopup) {
+    imagePopup.style.display = 'none';
+  }
+  hoveredImage = null;
+  
+  // Clear any pending timeouts
+  if (typeof imagePopupTimeout !== 'undefined' && imagePopupTimeout) {
+    clearTimeout(imagePopupTimeout);
+    imagePopupTimeout = null;
+  }
+  if (typeof mouseMovementTimeout !== 'undefined' && mouseMovementTimeout) {
+    clearTimeout(mouseMovementTimeout);
+    mouseMovementTimeout = null;
+  }
+}
+
+function isValidImage(imageElement) {
+  if (!imageElement || imageElement.tagName !== 'IMG') return false;
+  
+  const src = imageElement.src;
+  if (!src || src === '' || src.startsWith('data:image/svg')) return false;
+  
+  // Check minimum size (avoid tiny icons, spacers, etc.)
+  const width = imageElement.naturalWidth || imageElement.width;
+  const height = imageElement.naturalHeight || imageElement.height;
+  
+  return width >= 50 && height >= 50;
+}
+
+async function handleSaveImage() {
+  if (!hoveredImage) return;
+
+  try {
+    // Store reference to image before hiding popup (which sets hoveredImage to null)
+    const imageToSave = hoveredImage;
+    hideImagePopup();
+    
+    const imageData = await imageToBase64(imageToSave);
+    const metadata = getImageMetadata(imageToSave);
+    
+    // If imageData is null, it means we hit CORS issues, use URL fallback
+    const messageData = {
+      metadata: {
+        ...metadata,
+        url: window.location.href,
+        title: document.title,
+        domain: window.location.hostname,
+        caption: metadata.alt || '',
+        tags: []
+      }
+    };
+    
+    let response;
+    if (imageData) {
+      // Store as base64 (preferred method)
+      response = await chrome.runtime.sendMessage({
+        action: 'saveImageNote',
+        data: {
+          imageData: imageData,
+          metadata: messageData.metadata
+        }
+      });
+    } else {
+      // Fall back to URL-based storage for cross-origin images
+      response = await chrome.runtime.sendMessage({
+        action: 'saveImageUrlNote',
+        data: {
+          imageUrl: imageToSave.src,
+          metadata: messageData.metadata
+        }
+      });
+    }
+    
+    if (response && response.success) {
+      showImageSaveToast('Image saved to notes!');
+    } else {
+      throw new Error(response?.error || 'Failed to save image');
+    }
+  } catch (error) {
+    console.error('Error saving image:', error);
+    showImageSaveToast('Failed to save image', 'error');
+  }
+}
+
+async function handleSaveImageWithTags() {
+  if (!hoveredImage) return;
+
+  try {
+    // Store reference before hiding popup
+    const imageToSave = hoveredImage;
+    const imageData = await imageToBase64(imageToSave);
+    const metadata = getImageMetadata(imageToSave);
+    
+    hideImagePopup();
+    
+    // Show tag dialog for image (pass both imageData and imageUrl for fallback)
+    showImageTagsDialog(imageData, metadata, imageToSave.src);
+  } catch (error) {
+    console.error('Error preparing image for tagging:', error);
+    showImageSaveToast('Failed to prepare image', 'error');
+  }
+}
+
+function showImageTagsDialog(imageData, metadata, imageUrl) {
+  try {
+    // Apply current theme before showing dialog
+    applyTheme();
+    
+    const existingDialog = document.getElementById('image-tags-dialog');
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+
+    const dialog = document.createElement('div');
+    dialog.id = 'image-tags-dialog';
+    dialog.innerHTML = `
+      <div class="dialog-overlay"></div>
+      <div class="dialog-content">
+        <h3>Save Image with Tags</h3>
+        
+        <div class="image-preview">
+          <img src="${imageData || imageUrl}" alt="Preview" style="max-width: 200px; max-height: 150px; border-radius: 6px;">
+        </div>
+        
+        <div class="form-group">
+          <label>Caption (optional):</label>
+          <input type="text" id="image-caption" placeholder="Add a caption for this image..." value="${metadata.alt || ''}">
+        </div>
+        
+        <div class="form-group">
+          <label>Tags:</label>
+          <div id="image-tags-container"></div>
+        </div>
+        
+        <div class="form-actions">
+          <button type="button" id="cancel-image-tags" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="save-image-with-tags" class="btn btn-primary">Save Image</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // Initialize tag input for image dialog
+    let imageTagInput = null;
+    try {
+      if (typeof TagInput !== 'undefined') {
+        imageTagInput = new TagInput(document.getElementById('image-tags-container'), {
+          placeholder: 'Add tags...',
+          showRecentTags: true
+        });
+      }
+    } catch (error) {
+      console.error('TagInput not available, using fallback:', error);
+      // Fallback input
+      const tagsContainer = document.getElementById('image-tags-container');
+      tagsContainer.innerHTML = '<input type="text" class="tag-input" placeholder="Enter tags separated by commas...">';
+    }
+
+    // Event handlers
+    dialog.querySelector('#cancel-image-tags').addEventListener('click', () => {
+      dialog.remove();
+    });
+
+    dialog.querySelector('#save-image-with-tags').addEventListener('click', async () => {
+      try {
+        const caption = document.getElementById('image-caption').value.trim();
+        let tags = [];
+        
+        if (imageTagInput && imageTagInput.getTags) {
+          tags = imageTagInput.getTags();
+        } else {
+          const fallbackInput = document.querySelector('#image-tags-container .tag-input');
+          const value = fallbackInput?.value.trim() || '';
+          tags = value ? value.split(',').map(t => t.trim()).filter(t => t.length > 0) : [];
+        }
+
+        metadata.caption = caption;
+        metadata.tags = tags;
+        metadata.url = window.location.href;
+        metadata.title = document.title;
+        metadata.domain = window.location.hostname;
+
+        // Use the same fallback logic as handleSaveImage
+        let response;
+        if (imageData) {
+          // Store as base64 (preferred method)
+          response = await chrome.runtime.sendMessage({
+            action: 'saveImageNote',
+            data: {
+              imageData: imageData,
+              metadata: metadata
+            }
+          });
+        } else {
+          // Fall back to URL-based storage for cross-origin images
+          response = await chrome.runtime.sendMessage({
+            action: 'saveImageUrlNote',
+            data: {
+              imageUrl: imageUrl,
+              metadata: metadata
+            }
+          });
+        }
+        
+        if (response && response.success) {
+          dialog.remove();
+          showImageSaveToast('Image saved with tags!');
+        } else {
+          throw new Error(response?.error || 'Failed to save image');
+        }
+      } catch (error) {
+        console.error('Error saving image with tags:', error);
+        showImageSaveToast('Failed to save image', 'error');
+      }
+    });
+
+    dialog.querySelector('.dialog-overlay').addEventListener('click', () => {
+      dialog.remove();
+    });
+
+    // Show dialog
+    dialog.style.display = 'flex';
+  } catch (error) {
+    console.error('Error showing image tags dialog:', error);
+  }
+}
+
+function showImageSaveToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.className = `image-save-toast ${type}`;
+  toast.textContent = message;
+  
+  toast.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: ${type === 'success' ? '#10b981' : '#ef4444'};
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10001;
+    transform: translateX(400px);
+    transition: transform 0.3s ease;
+  `;
+  
+  document.body.appendChild(toast);
+  
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateX(0)';
+  });
+  
+  setTimeout(() => {
+    toast.style.transform = 'translateX(400px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// Image utility functions
+async function imageToBase64(imageElement) {
+  return new Promise((resolve, reject) => {
+    if (!imageElement) {
+      reject(new Error('Image element is null or undefined'));
+      return;
+    }
+
+    try {
+      // First try direct canvas conversion (works for same-origin images)
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      canvas.width = imageElement.naturalWidth || imageElement.width;
+      canvas.height = imageElement.naturalHeight || imageElement.height;
+      
+      ctx.drawImage(imageElement, 0, 0);
+      
+      const base64 = canvas.toDataURL('image/png');
+      resolve(base64);
+    } catch (corsError) {
+      if (corsError.name === 'SecurityError') {
+        // Handle cross-origin images by creating a new image with crossOrigin
+        const corsImage = new Image();
+        corsImage.crossOrigin = 'anonymous';
+        
+        corsImage.onload = function() {
+          try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = corsImage.naturalWidth || corsImage.width;
+            canvas.height = corsImage.naturalHeight || corsImage.height;
+            
+            ctx.drawImage(corsImage, 0, 0);
+            
+            const base64 = canvas.toDataURL('image/png');
+            resolve(base64);
+          } catch (retryError) {
+            // If still fails, fall back to URL-based storage
+            console.warn('Cannot convert cross-origin image to base64, using URL fallback');
+            resolve(null); // Signal to use URL fallback
+          }
+        };
+        
+        corsImage.onerror = function() {
+          console.warn('Failed to load image with CORS, using URL fallback');
+          resolve(null); // Signal to use URL fallback
+        };
+        
+        corsImage.src = imageElement.src;
+      } else {
+        reject(corsError);
+      }
+    }
+  });
+}
+
+function getImageMetadata(imageElement) {
+  if (!imageElement) {
+    throw new Error('Image element is null or undefined');
+  }
+  
+  return {
+    width: imageElement.naturalWidth || imageElement.width,
+    height: imageElement.naturalHeight || imageElement.height,
+    format: getImageFormat(imageElement.src),
+    originalSrc: imageElement.src,
+    alt: imageElement.alt || '',
+    size: null // Will be calculated from base64 data
+  };
+}
+
+function getImageFormat(src) {
+  const extension = src.split('.').pop()?.toLowerCase();
+  const formatMap = {
+    'jpg': 'jpeg',
+    'jpeg': 'jpeg',
+    'png': 'png',
+    'gif': 'gif',
+    'webp': 'webp',
+    'svg': 'svg'
+  };
+  return formatMap[extension] || 'png';
 }
 
 function isValidSelection() {
@@ -526,6 +966,28 @@ document.addEventListener('selectionchange', () => {
   }
 });
 
+// Image capture click handler
+document.addEventListener('click', (e) => {
+  // Only trigger on Option/Alt + Click on images
+  if (!e.altKey) {
+    hideImagePopup();
+    return;
+  }
+  
+  const target = e.target;
+  if (target && target.tagName === 'IMG' && isValidImage(target)) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Small delay to avoid conflicts with other click handlers
+    setTimeout(() => {
+      showImagePopup(target, e.clientX, e.clientY);
+    }, 10);
+  } else {
+    hideImagePopup();
+  }
+});
+
 document.addEventListener('mousedown', (e) => {
   if (selectionPopup && !selectionPopup.contains(e.target)) {
     const tagsDialog = document.getElementById('tags-dialog');
@@ -883,11 +1345,330 @@ style.textContent = `
 .save-error .error-content {
   background: #ef4444;
 }
+
+/* Image popup styles */
+#text-to-notes-image-popup {
+  position: absolute;
+  z-index: 10000;
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+#text-to-notes-image-popup * {
+  pointer-events: auto;
+}
+
+#text-to-notes-image-popup .popup-content {
+  background: #1f2937;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  display: flex;
+  gap: 4px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#text-to-notes-image-popup .popup-content button {
+  background: transparent;
+  border: none;
+  color: #f9fafb;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+#text-to-notes-image-popup .popup-content button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+#text-to-notes-image-popup .popup-content button:active {
+  transform: translateY(0);
+}
+
+#text-to-notes-image-popup .popup-content button svg {
+  flex-shrink: 0;
+}
+
+/* Image tags dialog styles */
+#image-tags-dialog {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: auto !important;
+}
+
+#image-tags-dialog .dialog-overlay {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: var(--overlay, rgba(0, 0, 0, 0.5)) !important;
+  backdrop-filter: blur(4px) !important;
+  pointer-events: auto !important;
+}
+
+#image-tags-dialog .dialog-content {
+  background: var(--dialog-bg, white) !important;
+  border-radius: 12px !important;
+  padding: 20px !important;
+  box-shadow: 0 20px 25px -5px var(--dialog-shadow, rgba(0, 0, 0, 0.1)) !important;
+  width: 90% !important;
+  max-width: 500px !important;
+  position: relative !important;
+  z-index: 2 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transition: background-color 0.3s ease !important;
+}
+
+#image-tags-dialog .dialog-content h3 {
+  margin: 0 0 16px 0 !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: var(--dialog-text, #1f2937) !important;
+  display: block !important;
+  visibility: visible !important;
+}
+
+.image-preview {
+  text-align: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--dialog-preview-bg, #f9fafb);
+  border-radius: 8px;
+  border: 1px solid var(--dialog-border, #e5e7eb);
+}
+
+.image-preview img {
+  max-width: 100% !important;
+  height: auto !important;
+  border-radius: 6px !important;
+}
+
+#image-tags-dialog .form-group {
+  margin-bottom: 16px;
+}
+
+#image-tags-dialog .form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dialog-text, #1f2937);
+}
+
+#image-tags-dialog input[type="text"] {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--dialog-border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--dialog-bg, white);
+  color: var(--dialog-text, #1f2937);
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+#image-tags-dialog input[type="text"]:focus {
+  outline: none;
+  border-color: var(--dialog-accent, #3b82f6);
+}
+
+#image-tags-dialog .form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+#image-tags-dialog .btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#image-tags-dialog .btn-primary {
+  background: var(--dialog-accent, #3b82f6);
+  color: white;
+}
+
+#image-tags-dialog .btn-primary:hover {
+  background: #2563eb;
+}
+
+#image-tags-dialog .btn-secondary {
+  background: var(--dialog-preview-bg, #f3f4f6);
+  color: var(--dialog-text-secondary, #6b7280);
+}
+
+#image-tags-dialog .btn-secondary:hover {
+  background: var(--dialog-border, #e5e7eb);
+}
 `;
+
+// Initialize event listeners for image clipping
+let imagePopupTimeout = null;
+let currentMousePosition = { x: 0, y: 0 };
+let mouseMovementTimeout = null;
+
+function initializeImageClipping() {
+  // Track mouse position continuously
+  document.addEventListener('mousemove', (e) => {
+    currentMousePosition.x = e.clientX;
+    currentMousePosition.y = e.clientY;
+    
+    // If mouse is moving over an image, reset the show timeout
+    if (e.target.tagName === 'IMG' && isValidImage(e.target) && hoveredImage === e.target) {
+      // Clear existing timeout
+      if (mouseMovementTimeout) {
+        clearTimeout(mouseMovementTimeout);
+      }
+      
+      // Set new timeout - only show popup when mouse stops moving for 300ms
+      mouseMovementTimeout = setTimeout(() => {
+        if (hoveredImage === e.target) { // Still hovering same image
+          showImagePopup(e.target, currentMousePosition.x, currentMousePosition.y);
+        }
+      }, 300);
+    }
+  });
+
+  // Image hover handling - detect when mouse enters an image
+  document.addEventListener('mouseover', (e) => {
+    if (e.target.tagName === 'IMG' && isValidImage(e.target)) {
+      hoveredImage = e.target;
+      currentMousePosition.x = e.clientX;
+      currentMousePosition.y = e.clientY;
+      
+      // Start the "mouse stopped" detection
+      if (mouseMovementTimeout) {
+        clearTimeout(mouseMovementTimeout);
+      }
+      mouseMovementTimeout = setTimeout(() => {
+        if (hoveredImage === e.target) {
+          showImagePopup(e.target, currentMousePosition.x, currentMousePosition.y);
+        }
+      }, 300);
+    }
+    
+    // If mouse enters the image popup, cancel any pending hide timeout
+    if (e.target.closest('#text-to-notes-image-popup')) {
+      if (imagePopupTimeout) {
+        clearTimeout(imagePopupTimeout);
+        imagePopupTimeout = null;
+      }
+    }
+  });
+
+  document.addEventListener('mouseout', (e) => {
+    // Only start hide timeout when mouse leaves both the image and popup area
+    const isLeavingImage = e.target.tagName === 'IMG' && hoveredImage === e.target;
+    const isLeavingPopup = e.target.closest('#text-to-notes-image-popup');
+    
+    if (isLeavingImage) {
+      // Clear the mouse movement timeout when leaving image
+      if (mouseMovementTimeout) {
+        clearTimeout(mouseMovementTimeout);
+        mouseMovementTimeout = null;
+      }
+    }
+    
+    if (isLeavingImage || isLeavingPopup) {
+      // Check if mouse is moving to related element (image to popup or popup to image)
+      const relatedTarget = e.relatedTarget;
+      const movingToPopup = relatedTarget && relatedTarget.closest('#text-to-notes-image-popup');
+      const movingToImage = relatedTarget && relatedTarget.tagName === 'IMG' && relatedTarget === hoveredImage;
+      
+      // Only hide if not moving to related elements
+      if (!movingToPopup && !movingToImage) {
+        imagePopupTimeout = setTimeout(() => {
+          hideImagePopup();
+          hoveredImage = null;
+        }, 150);
+      }
+    }
+  });
+
+  // Optional: Click on image to immediately show popup (skip hover delay)
+  document.addEventListener('click', (e) => {
+    if (e.target.tagName === 'IMG' && isValidImage(e.target)) {
+      // Clear any pending timeouts
+      if (imagePopupTimeout) {
+        clearTimeout(imagePopupTimeout);
+        imagePopupTimeout = null;
+      }
+      if (mouseMovementTimeout) {
+        clearTimeout(mouseMovementTimeout);
+        mouseMovementTimeout = null;
+      }
+      
+      hoveredImage = e.target;
+      currentMousePosition.x = e.clientX;
+      currentMousePosition.y = e.clientY;
+      showImagePopup(e.target, e.clientX, e.clientY);
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+
+  // Handle text selection for existing text-to-notes functionality
+  // Require Option+selection to avoid showing popup too often
+  document.addEventListener('mouseup', (e) => {
+    if (e.altKey) { // Only show popup when Option key is held during selection
+      setTimeout(() => {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+        
+        if (selectedText && isValidSelection()) {
+          lastSelection = selectedText;
+          lastMousePosition = { x: e.clientX, y: e.clientY };
+          showSelectionPopup();
+        } else {
+          hideSelectionPopup();
+        }
+      }, 10);
+    }
+  });
+
+  // Hide popups when clicking elsewhere
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#text-to-notes-popup') && 
+        !e.target.closest('#text-to-notes-image-popup') && 
+        !e.target.closest('#image-tags-dialog')) {
+      hideSelectionPopup();
+      hideImagePopup();
+    }
+  });
+}
 
 // Only initialize if we have the required APIs and DOM
 if (typeof chrome !== 'undefined' && chrome.runtime && document.body) {
   document.head.appendChild(style);
+  initializeImageClipping();
   console.log('Text-to-Notes: Extension initialized successfully');
 } else {
   console.warn('Text-to-Notes: Extension could not initialize - missing required APIs or DOM not ready');
@@ -897,6 +1678,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && document.body) {
     document.addEventListener('DOMContentLoaded', () => {
       if (typeof chrome !== 'undefined' && chrome.runtime && document.body) {
         document.head.appendChild(style);
+        initializeImageClipping();
         console.log('Text-to-Notes: Extension initialized after DOM ready');
       }
     });

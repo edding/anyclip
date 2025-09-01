@@ -196,6 +196,9 @@ class NotesManager {
       case 'untagged':
         filtered = filtered.filter(note => !note.tags || note.tags.length === 0);
         break;
+      case 'images':
+        filtered = filtered.filter(note => this.isImageNote(note));
+        break;
       case 'all':
       default:
         break;
@@ -266,12 +269,13 @@ class NotesManager {
     const isSelected = this.selectedNotes.has(note.id);
 
     return `
-      <div class="note-card ${isSelected ? 'selected' : ''}" data-id="${note.id}">
+      <div class="note-card ${this.isImageNote(note) ? 'image-note' : ''} ${isSelected ? 'selected' : ''}" data-id="${note.id}">
         <input type="checkbox" class="note-checkbox" ${isSelected ? 'checked' : ''} 
                data-id="${note.id}">
         
         <div class="note-header">
           <div class="note-meta">
+            ${this.createNoteTypeIcon(note)}
             <div class="note-domain">${Utils.escapeHtml(domain)}</div>
             <div class="note-date">${formattedDate}</div>
           </div>
@@ -292,16 +296,64 @@ class NotesManager {
         </div>
         
         <div class="note-content">
-          <h3 class="note-title">
-            <a href="${note.url}" target="_blank" rel="noopener noreferrer" title="Open source page">
-              ${Utils.escapeHtml(note.title)}
-            </a>
-          </h3>
-          <p class="note-text">${Utils.escapeHtml(truncatedText)}</p>
+          ${this.isImageNote(note) ? '' : `
+            <h3 class="note-title">
+              <a href="${note.url}" target="_blank" rel="noopener noreferrer" title="Open source page">
+                ${Utils.escapeHtml(note.title)}
+              </a>
+            </h3>
+          `}
+          ${this.createNoteContentHTML(note, truncatedText)}
           <div class="note-tags">${tagsHTML}</div>
         </div>
       </div>
     `;
+  }
+
+  isImageNote(note) {
+    return note.type === 'image' || note.type === 'text_with_image' || note.type === 'image_url';
+  }
+
+  createNoteTypeIcon(note) {
+    if (!this.isImageNote(note)) return '';
+
+    const iconTitle = note.type === 'image' ? 'Image note' : 
+                     note.type === 'image_url' ? 'Image note (linked)' : 
+                     'Text with image';
+    
+    return `
+      <span class="note-type-icon" title="${iconTitle}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="9" cy="9" r="2"></circle>
+          <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+        </svg>
+      </span>
+    `;
+  }
+
+  createNoteContentHTML(note, truncatedText) {
+    const hasImage = this.isImageNote(note) && (note.imageData || note.imageUrl);
+    
+    if (!hasImage) {
+      // Regular text note
+      return `<p class="note-text">${Utils.escapeHtml(truncatedText)}</p>`;
+    }
+
+    // Image note
+    const imageSrc = note.imageData || note.imageUrl;
+    let content = `
+      <div class="note-image-container">
+        <img src="${imageSrc}" alt="${Utils.escapeHtml(note.imageMetadata?.alt || 'Saved image')}" class="note-image" loading="lazy">
+      </div>
+    `;
+    
+    // Add text content for text_with_image notes or if there's a caption
+    if ((note.type === 'text_with_image' && note.text) || (note.text && note.text !== (note.imageMetadata?.alt || ''))) {
+      content += `<p class="note-text">${Utils.escapeHtml(truncatedText)}</p>`;
+    }
+    
+    return content;
   }
 
   attachNoteEventListeners() {

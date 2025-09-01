@@ -338,6 +338,45 @@ body {
   flex-wrap: wrap;
 }
 
+/* Image note styles */
+.note-type-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-primary);
+  margin-right: 4px;
+}
+
+.note-image-container {
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.note-image {
+  max-width: 100%;
+  height: auto;
+  max-height: 120px;
+  border-radius: 6px;
+  border: 1px solid var(--border-secondary);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.note-image:hover {
+  transform: scale(1.02);
+}
+
+.note-caption {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.image-note {
+  border-left: 4px solid var(--accent-primary);
+}
+
 .tag {
   background: #eff6ff;
   color: #1d4ed8;

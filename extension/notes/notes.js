@@ -176,10 +176,54 @@ class NotesApp {
       `<span class="tag">${Utils.escapeHtml(tag)}</span>`
     ).join('');
 
+    // Handle different note types
+    const isImageNote = note.type === 'image' || note.type === 'text_with_image' || note.type === 'image_url';
+    const hasImage = isImageNote && (note.imageData || note.imageUrl);
+    
+    let contentHTML = '';
+    let noteTypeIcon = '';
+    
+    if (hasImage) {
+      // Image note type icon with updated tooltips
+      const iconTitle = note.type === 'image' ? 'Image note' : 
+                       note.type === 'image_url' ? 'Image note (linked)' : 
+                       'Text with image';
+      
+      noteTypeIcon = `
+        <span class="note-type-icon" title="${iconTitle}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="9" cy="9" r="2"></circle>
+            <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+          </svg>
+        </span>
+      `;
+      
+      // Use imageData (base64) if available, otherwise use imageUrl
+      const imageSrc = note.imageData || note.imageUrl;
+      contentHTML = `
+        <div class="note-image-container">
+          <img src="${imageSrc}" alt="${Utils.escapeHtml(note.imageMetadata?.alt || 'Saved image')}" class="note-image">
+        </div>
+      `;
+      
+      // Add text content for text_with_image notes
+      if (note.type === 'text_with_image' && note.text) {
+        contentHTML += `<p class="note-text">${Utils.escapeHtml(truncatedText)}</p>`;
+      } else if (note.text) {
+        // For image-only notes, treat text as caption
+        contentHTML += `<p class="note-caption">${Utils.escapeHtml(truncatedText)}</p>`;
+      }
+    } else {
+      // Regular text note
+      contentHTML = `<p class="note-text">${Utils.escapeHtml(truncatedText)}</p>`;
+    }
+
     return `
-      <div class="note-card" data-id="${note.id}">
+      <div class="note-card ${isImageNote ? 'image-note' : ''}" data-id="${note.id}">
         <div class="note-header">
           <div class="note-meta">
+            ${noteTypeIcon}
             <span class="note-domain">${Utils.escapeHtml(domain)}</span>
             <span class="note-date">${formattedDate}</span>
           </div>
@@ -200,12 +244,14 @@ class NotesApp {
         </div>
         
         <div class="note-content">
-          <h3 class="note-title">
-            <a href="${note.url}" target="_blank" rel="noopener noreferrer" title="Open source page">
-              ${Utils.escapeHtml(note.title)}
-            </a>
-          </h3>
-          <p class="note-text">${Utils.escapeHtml(truncatedText)}</p>
+          ${isImageNote ? '' : `
+            <h3 class="note-title">
+              <a href="${note.url}" target="_blank" rel="noopener noreferrer" title="Open source page">
+                ${Utils.escapeHtml(note.title)}
+              </a>
+            </h3>
+          `}
+          ${contentHTML}
           <div class="note-tags">${tagsHTML}</div>
         </div>
       </div>

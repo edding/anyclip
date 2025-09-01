@@ -523,6 +523,51 @@ body {
   margin-bottom: 12px;
 }
 
+/* Image note styles */
+.note-card.image-note {
+  border-left: 4px solid var(--accent-primary);
+}
+
+.note-type-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+  color: var(--accent-primary);
+}
+
+.note-image-container {
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+}
+
+.note-image {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+.note-image:hover {
+  transform: scale(1.02);
+}
+
+/* Adjust layout for list view */
+.notes-grid.list-view .note-image {
+  max-height: 120px;
+}
+
+.notes-grid.list-view .note-image-container {
+  float: right;
+  width: 150px;
+  margin-left: 16px;
+  margin-top: 0;
+}
+
 .note-tags {
   display: flex;
   gap: 6px;

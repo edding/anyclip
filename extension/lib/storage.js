@@ -335,6 +335,156 @@ class NotesStorage {
     return colors[Math.abs(hash) % colors.length];
   }
 
+  // Image storage methods
+  async saveImageNote(imageData, metadata = {}) {
+    try {
+      const note = {
+        id: this.generateId(),
+        type: 'image',
+        imageData: imageData, // base64 encoded image data
+        imageMetadata: {
+          width: metadata.width || null,
+          height: metadata.height || null,
+          size: metadata.size || null,
+          format: metadata.format || 'png',
+          originalSrc: metadata.originalSrc || null,
+          alt: metadata.alt || null
+        },
+        text: metadata.caption || '',
+        url: metadata.url || window.location?.href || '',
+        title: metadata.title || document?.title || '',
+        domain: metadata.domain || (window.location?.hostname || ''),
+        tags: metadata.tags || [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      return await this.saveNote(note);
+    } catch (error) {
+      console.error('Error saving image note:', error);
+      throw error;
+    }
+  }
+
+  async saveImageUrlNote(imageUrl, metadata = {}) {
+    try {
+      const note = {
+        id: this.generateId(),
+        type: 'image_url',
+        imageUrl: imageUrl, // Store URL instead of base64 data
+        imageMetadata: {
+          width: metadata.width || null,
+          height: metadata.height || null,
+          size: metadata.size || null,
+          format: metadata.format || 'unknown',
+          originalSrc: metadata.originalSrc || imageUrl,
+          alt: metadata.alt || null
+        },
+        text: metadata.caption || '',
+        url: metadata.url || '',
+        title: metadata.title || '',
+        domain: metadata.domain || '',
+        tags: metadata.tags || [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      return await this.saveNote(note);
+    } catch (error) {
+      console.error('Error saving image URL note:', error);
+      throw error;
+    }
+  }
+
+  async saveTextWithImage(textContent, imageData, metadata = {}) {
+    try {
+      const note = {
+        id: this.generateId(),
+        type: 'text_with_image',
+        text: textContent,
+        imageData: imageData,
+        imageMetadata: {
+          width: metadata.width || null,
+          height: metadata.height || null,
+          size: metadata.size || null,
+          format: metadata.format || 'png',
+          originalSrc: metadata.originalSrc || null,
+          alt: metadata.alt || null
+        },
+        url: metadata.url || window.location?.href || '',
+        title: metadata.title || document?.title || '',
+        domain: metadata.domain || (window.location?.hostname || ''),
+        tags: metadata.tags || [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      return await this.saveNote(note);
+    } catch (error) {
+      console.error('Error saving text with image note:', error);
+      throw error;
+    }
+  }
+
+  async getImageNotes() {
+    try {
+      const allNotes = await this.getAllNotes();
+      return allNotes.filter(note => 
+        note.type === 'image' || 
+        note.type === 'text_with_image' || 
+        note.type === 'image_url'
+      );
+    } catch (error) {
+      console.error('Error getting image notes:', error);
+      return [];
+    }
+  }
+
+  // Utility method to convert image to base64
+  async imageToBase64(imageElement) {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = imageElement.naturalWidth || imageElement.width;
+        canvas.height = imageElement.naturalHeight || imageElement.height;
+        
+        ctx.drawImage(imageElement, 0, 0);
+        
+        const base64 = canvas.toDataURL('image/png');
+        resolve(base64);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Utility method to get image metadata
+  getImageMetadata(imageElement) {
+    return {
+      width: imageElement.naturalWidth || imageElement.width,
+      height: imageElement.naturalHeight || imageElement.height,
+      format: this.getImageFormat(imageElement.src),
+      originalSrc: imageElement.src,
+      alt: imageElement.alt || '',
+      size: null // Will be calculated from base64 data
+    };
+  }
+
+  getImageFormat(src) {
+    const extension = src.split('.').pop()?.toLowerCase();
+    const formatMap = {
+      'jpg': 'jpeg',
+      'jpeg': 'jpeg',
+      'png': 'png',
+      'gif': 'gif',
+      'webp': 'webp',
+      'svg': 'svg'
+    };
+    return formatMap[extension] || 'png';
+  }
+
   // Theme management methods
   async getTheme() {
     try {
@@ -366,6 +516,14 @@ class NotesStorage {
       console.error('Error toggling theme:', error);
       throw error;
     }
+  }
+
+  generateId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 }
 
