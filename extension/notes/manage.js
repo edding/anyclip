@@ -389,12 +389,30 @@ class NotesManager {
       });
     });
 
+    // Add click handlers for images to open source URL
+    this.elements.notesGrid.querySelectorAll('.note-image').forEach(img => {
+      const noteCard = img.closest('.note-card');
+      if (noteCard) {
+        const noteId = noteCard.dataset.id;
+        const note = this.notes.find(n => n.id === noteId);
+        if (note && note.url) {
+          img.style.cursor = 'pointer';
+          img.title = 'Click to open source page';
+          img.addEventListener('click', (e) => {
+            e.stopPropagation();
+            chrome.tabs.create({ url: note.url });
+          });
+        }
+      }
+    });
+
     // Note card clicks for selection
     this.elements.notesGrid.querySelectorAll('.note-card').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.tagName === 'A' || e.target.closest('a')) return;
         if (e.target.classList.contains('note-tag')) return;
         if (e.target.classList.contains('btn') || e.target.closest('.btn')) return;
+        if (e.target.classList.contains('note-image')) return; // Don't select when clicking image
         
         const checkbox = card.querySelector('.note-checkbox');
         checkbox.checked = !checkbox.checked;

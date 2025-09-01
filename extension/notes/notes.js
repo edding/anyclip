@@ -272,6 +272,23 @@ class NotesApp {
         this.openDeleteModal(btn.dataset.id);
       });
     });
+
+    // Add click handlers for images to open source URL
+    this.elements.notesContainer.querySelectorAll('.note-image').forEach(img => {
+      const noteCard = img.closest('.note-card');
+      if (noteCard) {
+        const noteId = noteCard.dataset.id;
+        const note = this.notes.find(n => n.id === noteId);
+        if (note && note.url) {
+          img.style.cursor = 'pointer';
+          img.title = 'Click to open source page';
+          img.addEventListener('click', (e) => {
+            e.stopPropagation();
+            chrome.tabs.create({ url: note.url });
+          });
+        }
+      }
+    });
   }
 
   handleSearch(term) {
