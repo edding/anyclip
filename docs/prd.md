@@ -1,9 +1,9 @@
 # Text-to-Notes Chrome Extension — Product Requirements Document (PRD)
 
 ## 1) Overview
-A Chrome extension that lets users select text on any web page and save it as a note with tags and the source URL. A companion notes page allows viewing, editing, searching, and organizing notes.
+A Chrome extension that lets users select text and capture images on any web page and save them as notes with tags and the source URL. A companion notes page allows viewing, editing, searching, and organizing notes.
 
-**Scope (MVP):** minimal, reliable text clipping + tagging + notes management. Future ideas (grouping, AI summarize, full-page capture) are out of scope for v0 but considered in architecture.
+**Scope (MVP):** minimal, reliable text/image clipping + tagging + notes management. Future ideas (grouping, AI summarize, full-page capture) are out of scope for v0 but considered in architecture.
 
 ---
 
@@ -29,9 +29,10 @@ A Chrome extension that lets users select text on any web page and save it as a 
 
 ## 4) User Stories (MVP)
 ### 4.1 Capture Note
-- As a user, I can select text on a webpage and **right‑click → “Save as note.”**
-- The saved note includes **selected text, page title, URL, timestamp**.
-- (Optional) The save flow lets me **add tags** immediately.
+- As a user, I can select text on a webpage and see a **popup to "Save Note"**
+- As a user, I can hover over images on a webpage and see a **popup to save the image**
+- The saved note includes **selected text/image, page title, URL, timestamp**
+- (Optional) The save flow lets me **add tags** immediately
 
 ### 4.2 Tagging
 - As a user, I can **add/edit/remove tags** when saving or later on the notes page.
@@ -44,20 +45,41 @@ A Chrome extension that lets users select text on any web page and save it as a 
 ---
 
 ## 5) Key Features & Requirements
-### 5.1 Text Capture
-- **Trigger:** Context menu on selected text (v0). (Popup/tooltip and keyboard shortcut in v1+)
-- **Captured fields:** text, title, URL, timestamp; optional user-entered tags.
-- **Reliability:** Must handle selections across common sites and frames when permitted.
+### 5.1 Content Capture
+- **Text Trigger:** PopClip-style popup on text selection (Option+mouseup)
+- **Image Trigger:** Hover-based popup on images with save options
+- **Captured fields:** text/image data, title, URL, timestamp; optional user-entered tags
+- **Reliability:** Must handle selections across common sites and frames when permitted
+- **CORS Handling:** Three-tier image storage (base64 → CORS retry → URL fallback)
 
 ### 5.2 Storage
 - **MVP:** `chrome.storage.local` with a typed schema. Consider `indexedDB` if data volume grows.
 - **Note schema (v0):**
   ```json
+  // Text Note
   {
     "id": "uuid",
+    "type": "text",
     "text": "captured snippet",
     "url": "https://example.com/path",
     "title": "Example Page",
+    "tags": ["tag1","tag2"],
+    "created_at": "2025-08-24T10:00:00Z"
+  }
+  
+  // Image Note
+  {
+    "id": "uuid",
+    "type": "image",
+    "imageData": "data:image/png;base64,iVBOR...",
+    "imageUrl": "https://example.com/fallback.jpg",
+    "imageMetadata": {
+      "width": 800, "height": 600,
+      "originalSrc": "https://example.com/image.jpg",
+      "alt": "Image description"
+    },
+    "text": "optional caption",
+    "url": "https://example.com/path",
     "tags": ["tag1","tag2"],
     "created_at": "2025-08-24T10:00:00Z"
   }
@@ -67,11 +89,12 @@ A Chrome extension that lets users select text on any web page and save it as a 
 ### 5.3 Notes Page
 - Route: `chrome-extension://<EXT_ID>/notes.html` (or `index.html#/notes` if using SPA).
 - Capabilities:
-  - List notes with snippet preview, tags, source title/URL, timestamp.
-  - Inline edit note text and tags.
-  - Delete notes (with undo snackbar optional).
-  - Filter/search by keyword and tag.
-  - Open source URL in new tab.
+  - List notes with snippet/image preview, tags, source title/URL, timestamp
+  - Support both text and image note display with thumbnails
+  - Inline edit note text and tags
+  - Delete notes (with undo snackbar optional)
+  - Filter/search by keyword, tag, and content type (text/images)
+  - Open source URL in new tab
 
 ### 5.4 Performance
 - Save operation should complete in **<150 ms p50** on typical hardware.
@@ -85,14 +108,17 @@ A Chrome extension that lets users select text on any web page and save it as a 
 ---
 
 ## 6) UX / UI
-### 6.1 Context Menu
-- **Label:** “Save selection as note”
-- On success: non-blocking toast/notification (optional in v0).
+### 6.1 PopClip-Style Popups
+- **Text Selection:** Popup with "Save Note" and "+ Tags" buttons
+- **Image Hover:** Popup with save options and tag integration
+- **Design:** Dark theme with smooth animations and smart positioning
+- On success: non-blocking toast/notification (optional in v0)
 
 ### 6.2 Notes Page
-- **Header:** Search box + tag filter.
-- **Table/List:** snippet, tags (chips), title (clickable), URL (icon), timestamp, actions (edit/delete).
-- **Edit Drawer/Modal:** Multi-line text editor + tag input.
+- **Header:** Search box + tag filter + content type filter (All/Recent/Images/Untagged)
+- **Table/List:** text/image preview, tags (chips), title (clickable), URL (icon), timestamp, actions (edit/delete)
+- **Edit Drawer/Modal:** Multi-line text editor + tag input + image display
+- **Image Support:** Thumbnails, lazy loading, responsive display
 
 Accessibility: keyboard navigation for search, edit, delete; proper ARIA roles.
 
@@ -100,9 +126,9 @@ Accessibility: keyboard navigation for search, edit, delete; proper ARIA roles.
 
 ## 7) Technical Design (MVP)
 - **Manifest:** MV3.
-- **Background service worker:** create context menu, handle selection capture, write to storage.
-- **Content script:** (only if needed) help extract selection + metadata reliably.
-- **UI:** Notes page (`notes.html` + JS). Optional lightweight framework (Vanilla JS for v0; React in v1+).
+- **Background service worker:** handle message passing, coordinate text/image capture, write to storage
+- **Content script:** PopClip-style popups, extract text selection + image capture with CORS handling
+- **UI:** Notes page (`notes.html` + JS) with mixed content support. Optional lightweight framework (Vanilla JS for v0; React in v1+)
 - **Utilities:** UUID generator, storage DAO, tag parser.
 - **Testing:** Unit tests for storage and parsing; manual E2E flows on Chrome stable.
 
@@ -110,8 +136,8 @@ Suggested structure:
 ```
 /extension
   ├─ manifest.json
-  ├─ background.js
-  ├─ content.js
+  ├─ background.js         # message handling + storage coordination
+  ├─ content.js            # PopClip popups + text/image capture
   ├─ notes/
   │   ├─ notes.html
   │   ├─ notes.css
@@ -124,23 +150,26 @@ Suggested structure:
 ---
 
 ## 8) Metrics (MVP)
-- **Activation:** # notes saved / day.
-- **Engagement:** % users who open notes page after saving.
-- **Organization adoption:** avg # tags per note; % notes with ≥1 tag.
-- **Quality (qual):** user feedback on correctness of captured text + metadata.
+- **Activation:** # notes saved / day (text + images)
+- **Engagement:** % users who open notes page after saving
+- **Content Mix:** ratio of text vs image notes captured
+- **Organization adoption:** avg # tags per note; % notes with ≥1 tag
+- **Quality (qual):** user feedback on correctness of captured content + metadata
 
 ---
 
 ## 9) Risks & Mitigations
-- **Discoverability (only right‑click):** add keyboard shortcut/selection popup in v1.
-- **Quota/scale:** migrate to `indexedDB` when notes grow; export/import as JSON in v2.
-- **Link rot:** add screenshot/reader‑mode capture in v3.
-- **Site restrictions/iframes:** fallback to document.getSelection in content script; handle edge cases with permissions.
+- **Image CORS restrictions:** three-tier fallback system (base64 → CORS retry → URL storage)
+- **Quota/scale:** migrate to `indexedDB` when notes grow; export/import as JSON in v2
+- **Large image files:** implement size limits and compression for base64 storage
+- **Site restrictions/iframes:** fallback to document.getSelection in content script; handle edge cases with permissions
 
 ---
 
 ## 10) Acceptance Criteria (v0)
-- Install extension and capture a selection via context menu.
-- Note contains **text, title, URL, timestamp**; optional tags.
-- Notes page loads, lists notes, allows **edit, tag edit, delete**, and **open URL**.
-- All data persists locally across browser restarts.
+- Install extension and capture text via PopClip-style popup and images via hover popup
+- Text notes contain **text, title, URL, timestamp**; optional tags
+- Image notes contain **image data/URL, metadata, title, URL, timestamp**; optional tags
+- Notes page loads, lists mixed content, allows **edit, tag edit, delete**, and **open URL**
+- Content type filtering works (All/Recent/Images/Untagged)
+- All data persists locally across browser restarts with CORS fallback working
