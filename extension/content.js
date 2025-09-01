@@ -1040,7 +1040,154 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     }
   }
+
+  // Handle context menu actions
+  if (request.action === 'contextMenuSaveText') {
+    handleContextMenuSaveText(request.data);
+  } else if (request.action === 'contextMenuSaveTextWithTags') {
+    handleContextMenuSaveTextWithTags(request.data);
+  } else if (request.action === 'contextMenuSaveImage') {
+    handleContextMenuSaveImage(request.data);
+  } else if (request.action === 'contextMenuSaveImageWithTags') {
+    handleContextMenuSaveImageWithTags(request.data);
+  }
 });
+
+// Context menu handlers for text
+async function handleContextMenuSaveText(data) {
+  try {
+    if (!data.selectionText) return;
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'saveNote',
+      data: {
+        text: data.selectionText,
+        url: data.pageUrl || window.location.href,
+        title: document.title,
+        tags: ''
+      }
+    });
+
+    if (response && response.success) {
+      showSaveConfirmation();
+      // Clear selection 
+      window.getSelection().removeAllRanges();
+    } else {
+      showError('Failed to save note');
+    }
+  } catch (error) {
+    console.error('Error saving note from context menu:', error);
+    showError('Failed to save note');
+  }
+}
+
+function handleContextMenuSaveTextWithTags(data) {
+  try {
+    if (!data.selectionText) return;
+
+    // Show the tags dialog with the selected text from context menu
+    showTagsDialog(data.selectionText);
+    // Clear selection after opening dialog
+    setTimeout(() => {
+      window.getSelection().removeAllRanges();
+    }, 100);
+  } catch (error) {
+    console.error('Error opening tags dialog from context menu:', error);
+    // Fallback to simple save
+    handleContextMenuSaveText(data);
+  }
+}
+
+// Context menu handlers for images
+async function handleContextMenuSaveImage(data) {
+  try {
+    if (!data.srcUrl) return;
+
+    // Find the image element by src URL
+    const imageElement = findImageElementBySrc(data.srcUrl);
+    if (!imageElement) {
+      showImageSaveToast('Image not found', 'error');
+      return;
+    }
+
+    // Use existing image save logic
+    const imageData = await imageToBase64(imageElement);
+    const metadata = getImageMetadata(imageElement);
+    
+    const messageData = {
+      metadata: {
+        ...metadata,
+        url: data.pageUrl || window.location.href,
+        title: document.title,
+        domain: window.location.hostname,
+        caption: metadata.alt || '',
+        tags: []
+      }
+    };
+    
+    let response;
+    if (imageData) {
+      response = await chrome.runtime.sendMessage({
+        action: 'saveImageNote',
+        data: {
+          imageData: imageData,
+          metadata: messageData.metadata
+        }
+      });
+    } else {
+      response = await chrome.runtime.sendMessage({
+        action: 'saveImageUrlNote',
+        data: {
+          imageUrl: data.srcUrl,
+          metadata: messageData.metadata
+        }
+      });
+    }
+    
+    if (response && response.success) {
+      showImageSaveToast('Image saved to notes!');
+    } else {
+      throw new Error(response?.error || 'Failed to save image');
+    }
+  } catch (error) {
+    console.error('Error saving image from context menu:', error);
+    showImageSaveToast('Failed to save image', 'error');
+  }
+}
+
+async function handleContextMenuSaveImageWithTags(data) {
+  try {
+    if (!data.srcUrl) return;
+
+    // Find the image element by src URL
+    const imageElement = findImageElementBySrc(data.srcUrl);
+    if (!imageElement) {
+      showImageSaveToast('Image not found', 'error');
+      return;
+    }
+
+    // Use existing image save with tags logic
+    const imageData = await imageToBase64(imageElement);
+    const metadata = getImageMetadata(imageElement);
+    
+    // Show tag dialog for image
+    showImageTagsDialog(imageData, metadata, data.srcUrl);
+  } catch (error) {
+    console.error('Error preparing image for tagging from context menu:', error);
+    showImageSaveToast('Failed to prepare image', 'error');
+  }
+}
+
+// Helper function to find image element by src URL
+function findImageElementBySrc(srcUrl) {
+  const images = document.querySelectorAll('img');
+  for (let img of images) {
+    if (img.src === srcUrl) {
+      return img;
+    }
+  }
+  return null;
+}
 
 const style = document.createElement('style');
 style.textContent = `

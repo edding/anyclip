@@ -4,6 +4,97 @@ const storage = new NotesStorage();
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Text-to-Notes extension installed');
+  
+  // Create context menu items
+  createContextMenuItems();
+});
+
+// Create context menu items
+function createContextMenuItems() {
+  // Remove any existing context menu items first
+  chrome.contextMenus.removeAll(() => {
+    // Create parent menu item
+    chrome.contextMenus.create({
+      id: "text-to-notes-parent",
+      title: "Text-to-Notes",
+      contexts: ["selection", "image"]
+    });
+
+    // Text selection context menu items
+    chrome.contextMenus.create({
+      id: "save-selected-text",
+      parentId: "text-to-notes-parent",
+      title: "Save Selected Text",
+      contexts: ["selection"]
+    });
+
+    chrome.contextMenus.create({
+      id: "save-selected-text-with-tags",
+      parentId: "text-to-notes-parent", 
+      title: "Save Selected Text with Tags",
+      contexts: ["selection"]
+    });
+
+    // Image context menu items
+    chrome.contextMenus.create({
+      id: "save-image",
+      parentId: "text-to-notes-parent",
+      title: "Save Image",
+      contexts: ["image"]
+    });
+
+    chrome.contextMenus.create({
+      id: "save-image-with-tags",
+      parentId: "text-to-notes-parent",
+      title: "Save Image with Tags", 
+      contexts: ["image"]
+    });
+  });
+}
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "save-selected-text") {
+    // Send message to content script to save selected text
+    chrome.tabs.sendMessage(tab.id, {
+      action: "contextMenuSaveText",
+      data: {
+        selectionText: info.selectionText,
+        pageUrl: info.pageUrl,
+        frameUrl: info.frameUrl
+      }
+    });
+  } else if (info.menuItemId === "save-selected-text-with-tags") {
+    // Send message to content script to save selected text with tags
+    chrome.tabs.sendMessage(tab.id, {
+      action: "contextMenuSaveTextWithTags",
+      data: {
+        selectionText: info.selectionText,
+        pageUrl: info.pageUrl,
+        frameUrl: info.frameUrl
+      }
+    });
+  } else if (info.menuItemId === "save-image") {
+    // Send message to content script to save image
+    chrome.tabs.sendMessage(tab.id, {
+      action: "contextMenuSaveImage",
+      data: {
+        srcUrl: info.srcUrl,
+        pageUrl: info.pageUrl,
+        frameUrl: info.frameUrl
+      }
+    });
+  } else if (info.menuItemId === "save-image-with-tags") {
+    // Send message to content script to save image with tags
+    chrome.tabs.sendMessage(tab.id, {
+      action: "contextMenuSaveImageWithTags",
+      data: {
+        srcUrl: info.srcUrl,
+        pageUrl: info.pageUrl,
+        frameUrl: info.frameUrl
+      }
+    });
+  }
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
